@@ -179,6 +179,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       const channel = storageService.subscribeToMeeting(
         meetingId,
         (participants) => {
+          // Sync active participants with DB state (backup for direct signals)
           const others = participants.filter(p => p.user_id !== user.id);
           setActiveParticipants(others);
           
@@ -256,6 +257,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return; 
+    
+    // Direct Leave Signal (Faster than DB)
+    if (signal.type === 'leave') {
+        setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
+        closePeerConnection(signal.from);
+        return;
+    }
+
     if (signal.to && signal.to !== user.id) return;
 
     const { type, from, candidate, sdp } = signal;
@@ -378,18 +387,22 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     storageService.leaveMeetingRoom(meetingId, user.id).catch(err => console.error(err));
   };
 
-  const handleLeave = () => {
-    // 1. Force visual unmount immediately
+  const handleLeave = async () => {
+    // 1. Visually exit immediately
     setIsLeaving(true);
-    
-    // 2. Stop local tracks immediately
+
+    // 2. Broadcast LEAVE signal to others (Fastest way to update remote clients)
+    if (channelRef.current) {
+       // We don't await this strictly to prevent blocking local exit, 
+       // but we fire it before unmounting triggers cleanup
+       await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
+    }
+
+    // 3. Stop local tracks
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
 
-    // 3. Defer parent state update slightly to allow re-render to black screen first if needed, 
-    // although setState is usually fast enough. 
-    setTimeout(() => {
-        onEndCall();
-    }, 0);
+    // 4. Switch View
+    onEndCall();
   };
 
   // --- RENDER ---

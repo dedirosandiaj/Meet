@@ -85,7 +85,7 @@ export const emailService = {
     const subject = `Welcome to ${appSettings.title} - Activate Your Account`;
     
     // PLAIN TEXT TEMPLATE
-    const body = `Welcome to ${appSettings.title}
+const body = `Welcome to ${appSettings.title}
 
 Hi ${name},
 

@@ -85,6 +85,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Loading state for sending emails
   const [sendingResetId, setSendingResetId] = useState<string | null>(null);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
+  const [isAddingUser, setIsAddingUser] = useState(false); // New loading state for adding user
 
   // Form States
   const [joinId, setJoinId] = useState('');
@@ -328,11 +329,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (addUserForm.name && addUserForm.email) {
-      await storageService.addUser(addUserForm.name, addUserForm.email, addUserForm.role);
-      const updatedUsers = await storageService.getUsers();
-      setAllUsers(updatedUsers);
-      setShowAddUserModal(false);
-      setAddUserForm({ name: '', email: '', role: UserRole.MEMBER });
+      setIsAddingUser(true);
+      try {
+        // 1. Save to Database
+        const newUser = await storageService.addUser(addUserForm.name, addUserForm.email, addUserForm.role);
+        
+        if (newUser && newUser.token) {
+            // 2. Automatically Send Activation Email
+            const baseUrl = window.location.origin;
+            const inviteUrl = `${baseUrl}/setup/${newUser.token}`;
+            await emailService.sendInvite(newUser.email, newUser.name, inviteUrl, appSettings);
+        }
+
+        // 3. Update UI
+        const updatedUsers = await storageService.getUsers();
+        setAllUsers(updatedUsers);
+        setShowAddUserModal(false);
+        setAddUserForm({ name: '', email: '', role: UserRole.MEMBER });
+      } catch (err) {
+        console.error("Error adding user:", err);
+      } finally {
+        setIsAddingUser(false);
+      }
     }
   };
 
@@ -682,7 +700,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
               <div><label className="block text-sm text-slate-400 mb-1">Full Name</label><input type="text" placeholder="John Doe" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={addUserForm.name} onChange={(e) => setAddUserForm({...addUserForm, name: e.target.value})} required /></div>
               <div><label className="block text-sm text-slate-400 mb-1">Email Address</label><input type="email" placeholder="john@example.com" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={addUserForm.email} onChange={(e) => setAddUserForm({...addUserForm, email: e.target.value})} required /></div>
               <div><label className="block text-sm text-slate-400 mb-1">Role</label><select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none appearance-none" value={addUserForm.role} onChange={(e) => setAddUserForm({...addUserForm, role: e.target.value as UserRole})}><option value={UserRole.MEMBER}>Member</option><option value={UserRole.ADMIN}>Admin</option></select></div>
-              <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">Add User</button></div>
+              <div className="flex justify-end gap-3 pt-2">
+                  <button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
+                  <button type="submit" disabled={isAddingUser} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg disabled:opacity-50 flex items-center gap-2">
+                      {isAddingUser && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Add & Invite
+                  </button>
+              </div>
             </form>
           </div>
         </div>
@@ -911,10 +935,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                            <div className="flex items-center gap-1 mr-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span></div>
                          ) : (
                            <div className="flex items-center gap-1 mr-2">
-                             <button onClick={() => handleSendInviteEmail(u)} disabled={sendingInviteId === u.id} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all disabled:opacity-50" title="Send Invitation Email">
+                             <button onClick={() => handleSendInviteEmail(u)} disabled={sendingInviteId === u.id} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all disabled:opacity-50" title="Resend Invitation Email">
                                 {sendingInviteId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
                              </button>
-                             <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 px-2 py-1.5 rounded-lg transition-all ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<><Check className="w-3 h-3" /></>) : (<>Copy Link <LinkIcon className="w-3 h-3" /></>)}</button>
+                             {/* Copy Link Button Removed as requested */}
                            </div>
                          )}
                          <div className="flex gap-1">

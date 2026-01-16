@@ -355,7 +355,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
-  // --- 1. INITIALIZATION ---
+  // --- INITIALIZATION ---
+  
+  // 1. PRE-LOAD GOOGLE DRIVE CLIENT
+  useEffect(() => {
+    // We initialize this in the background so it's ready when user clicks "Leave"
+    // This reduces latency and prevents popup blocker issues.
+    googleDriveService.initClient().catch(err => console.warn("Background GAPI Init warn:", err));
+  }, []);
+
+  // 2. LOAD MEETING DATA
   useEffect(() => {
     const initMeeting = async () => {
       const meetings = await storageService.getMeetings();
@@ -388,7 +397,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
   }, [meetingId]);
 
-  // --- 2. WEBRTC SETUP ---
+  // --- 3. WEBRTC SETUP ---
   useEffect(() => {
     if (isWaiting || !webcamStream) return;
 
@@ -426,7 +435,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
   }, [isWaiting, webcamStream]); 
 
-  // --- WEBRTC CORE (Simplified for brevity - logic unchanged) ---
+  // --- WEBRTC CORE (Simplified) ---
   const createPeerConnection = (targetUserId: string) => {
     if (peerConnections.current.has(targetUserId)) {
         return peerConnections.current.get(targetUserId);
@@ -694,25 +703,23 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const handleLeave = async () => {
-    // CRITICAL FIX: If we need to upload later, we must trigger the sign-in popup NOW.
-    // Popup blockers block window.open() inside async callbacks (like after the recording stop wait).
-    if (isRecording) {
-        try {
-            // Attempt to initialize & sign in immediately upon click
-            await googleDriveService.initClient();
-            await googleDriveService.signIn();
-        } catch (e) {
-            console.warn("Pre-signin failed (possibly popup blocked or config missing):", e);
-        }
-    }
-
     setIsLeaving(true);
 
     const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
 
     // IF RECORDING WAS ACTIVE, STOP IT AND SAVE TO DRIVE
     if (isRecording && mediaRecorderRef.current && recordedChunksRef.current) {
-        // Wait for final chunks
+        
+        // --- 1. PREPARE AUTH IMMEDIATELY ---
+        // We trigger the sign-in popup NOW, before waiting for the recorder to stop.
+        // This keeps the action synchronous with the user's click.
+        try {
+            await googleDriveService.signIn();
+        } catch (e) {
+            console.warn("Auth popup failed/skipped:", e);
+        }
+
+        // --- 2. STOP RECORDER (Async) ---
         await new Promise<void>(resolve => {
             if (mediaRecorderRef.current?.state !== 'inactive') {
                 mediaRecorderRef.current!.onstop = () => resolve();
@@ -726,8 +733,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
         const filename = `Meeting-Recording-${meetingId}-${Date.now()}.webm`;
         
-        // --- GOOGLE DRIVE UPLOAD ---
+        // --- 3. UPLOAD ---
         try {
+            // Note: uploadVideo calls signIn again internally to get the token,
+            // but since we already signed in above, it shouldn't trigger a popup block.
             const link = await googleDriveService.uploadVideo(blob, filename);
             console.log("Uploaded/Saved to: ", link);
         } catch (e: any) {
@@ -751,10 +760,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     if (channelRef.current) {
         if (isHost) {
-           // KICK EVERYONE OUT
            await storageService.sendSignal(channelRef.current, { type: 'force-end', from: user.id });
         } else {
-           // JUST LEAVE
            await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
         }
     }

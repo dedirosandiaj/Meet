@@ -14,19 +14,33 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 export const googleDriveService = {
   isInitialized: false,
+  cachedSettings: null as { clientId: string, apiKey: string } | null,
+
+  // Load settings once and cache them
+  loadSettings: async () => {
+    if (googleDriveService.cachedSettings) return googleDriveService.cachedSettings;
+    const settings = await storageService.getAppSettings();
+    if (settings.googleDriveClientId && settings.googleDriveApiKey) {
+        googleDriveService.cachedSettings = {
+            clientId: settings.googleDriveClientId,
+            apiKey: settings.googleDriveApiKey
+        };
+    }
+    return googleDriveService.cachedSettings;
+  },
 
   initClient: async (): Promise<boolean> => {
-    // If already initialized, just return true
+    // 1. If already fully initialized, return true immediately
     if (googleDriveService.isInitialized && window.gapi?.auth2?.getAuthInstance()) {
         return true;
     }
 
     console.log("Google Drive Service: Initializing...");
+
+    // 2. Fetch Credentials (use cache if available to be fast)
+    const creds = await googleDriveService.loadSettings();
     
-    // 1. Fetch Credentials from App Settings
-    const settings = await storageService.getAppSettings();
-    
-    if (!settings.googleDriveClientId || !settings.googleDriveApiKey) {
+    if (!creds) {
         console.warn("Google Drive Service: Missing Client ID or API Key in Settings.");
         return false; 
     }
@@ -40,11 +54,11 @@ export const googleDriveService = {
         window.gapi.load('client:auth2', async () => {
             try {
                 await window.gapi.client.init({
-                    apiKey: settings.googleDriveApiKey,
-                    clientId: settings.googleDriveClientId,
+                    apiKey: creds.apiKey,
+                    clientId: creds.clientId,
                     discoveryDocs: DISCOVERY_DOCS,
                     scope: SCOPES,
-                    plugin_name: "ZoomClone" // Prevents some origin mismatch errors
+                    plugin_name: "ZoomClone"
                 });
                 
                 googleDriveService.isInitialized = true;
@@ -53,6 +67,7 @@ export const googleDriveService = {
             } catch (error: any) {
                 console.error("Error initializing GAPI client", error);
                 if (error.details) console.error(error.details);
+                // Common error: "idpiframe_initialization_failed" happens if 3rd party cookies blocked
                 resolve(false);
             }
         });
@@ -60,6 +75,13 @@ export const googleDriveService = {
   },
 
   signIn: async (): Promise<boolean> => {
+    // Fast check if already signed in
+    if (googleDriveService.isInitialized) {
+         const auth = window.gapi.auth2.getAuthInstance();
+         if (auth && auth.isSignedIn.get()) return true;
+    }
+
+    // Initialize if needed (this might take time and trigger popup blocker if called late)
     if (!googleDriveService.isInitialized) {
         const success = await googleDriveService.initClient();
         if (!success) {
@@ -70,33 +92,29 @@ export const googleDriveService = {
 
     const GoogleAuth = window.gapi.auth2.getAuthInstance();
     
-    if (GoogleAuth.isSignedIn.get()) {
+    try {
+        await GoogleAuth.signIn({ prompt: 'select_account' });
         return true;
-    } else {
-        try {
-            await GoogleAuth.signIn();
-            return true;
-        } catch (error) {
-            console.error("Sign in error/cancelled", error);
-            return false;
-        }
+    } catch (error) {
+        console.error("Sign in error/cancelled", error);
+        return false;
     }
   },
 
   uploadVideo: async (blob: Blob, filename: string): Promise<string> => {
-    // Ensure signed in - This calls signIn internally, but ideally signIn should be called 
-    // before any async operation to avoid popup blockers.
+    // Note: signIn() must be called manually BEFORE this function in the UI event handler
+    // to ensure popup is not blocked. We check again here just in case.
     const signedIn = await googleDriveService.signIn();
     if (!signedIn) throw new Error("User not signed in to Google.");
 
     console.log(`Google Drive Service: Uploading ${filename}...`);
 
-    // ROBUST TOKEN RETRIEVAL
-    // gapi.auth.getToken() is legacy. We use auth2 instance.
     const authInstance = window.gapi.auth2.getAuthInstance();
     const currentUser = authInstance.currentUser.get();
-    const authResponse = currentUser.getAuthResponse(true); // true = force refresh if needed
-    const accessToken = authResponse?.access_token;
+    
+    // Force refresh token to ensure valid session
+    const authResponse = await currentUser.reloadAuthResponse(); 
+    const accessToken = authResponse.access_token;
 
     if (!accessToken) {
         throw new Error("Could not retrieve valid Google Access Token.");
@@ -121,7 +139,6 @@ export const googleDriveService = {
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
         
-        console.log("Upload Success:", data);
         return data.webViewLink;
     } catch (error) {
         console.error("Upload Error:", error);

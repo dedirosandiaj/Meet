@@ -28,7 +28,8 @@ import {
   Globe,
   Image as ImageIcon,
   Upload,
-  RefreshCw
+  RefreshCw,
+  Search
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -59,6 +60,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Meeting Modal States
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showInstantModal, setShowInstantModal] = useState(false); // NEW: Instant Meeting Setup
   const [showEditModal, setShowEditModal] = useState(false);
   
   // User Modal States
@@ -86,6 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     date: '',
     time: ''
   });
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
 
   // Edit Meeting Form State
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
@@ -162,10 +165,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       const meetingData = await storageService.getMeetings();
       setMeetings(meetingData);
       
-      if (isAdmin && activeTab === 'users') {
-        const userData = await storageService.getUsers();
-        setAllUsers(userData);
-      }
+      // Always fetch users now to populate the invite lists in modals
+      const userData = await storageService.getUsers();
+      setAllUsers(userData);
+      
       setIsLoading(false);
     };
 
@@ -425,7 +428,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     return result;
   };
 
-  const handleInstantMeeting = async () => {
+  const handleInstantMeetingClick = () => {
+    // Open a simple modal to select participants before starting
+    setSelectedParticipants(new Set()); // Reset selection
+    setShowInstantModal(true);
+  };
+
+  const handleConfirmInstantMeeting = async () => {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
     const id = generateMeetingId();
@@ -438,9 +447,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       participantsCount: 1,
       status: 'live'
     };
-    const updated = await storageService.createMeeting(newMeeting);
+    
+    // Pass invited user IDs
+    const updated = await storageService.createMeeting(newMeeting, Array.from(selectedParticipants));
     setMeetings(updated);
     setCreatedMeeting(newMeeting);
+    setShowInstantModal(false);
   };
 
   const handleJoinSubmit = (e: React.FormEvent) => {
@@ -465,10 +477,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       participantsCount: 0,
       status: 'upcoming'
     };
-    const updated = await storageService.createMeeting(newMeeting);
+    
+    // Pass invited user IDs
+    const updated = await storageService.createMeeting(newMeeting, Array.from(selectedParticipants));
     setMeetings(updated);
     setShowScheduleModal(false);
     setScheduleForm({ title: '', date: '', time: '' });
+    setSelectedParticipants(new Set()); // Reset
     setCreatedMeeting(newMeeting);
   };
 
@@ -478,6 +493,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
     setCreatedMeeting(null);
     setCopied(false);
+  };
+
+  const toggleParticipantSelection = (userId: string) => {
+      setSelectedParticipants(prev => {
+          const newSet = new Set(prev);
+          if (newSet.has(userId)) {
+              newSet.delete(userId);
+          } else {
+              newSet.add(userId);
+          }
+          return newSet;
+      });
   };
 
   const formatDateDisplay = (dateString: string) => {
@@ -524,6 +551,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       return 'live'; 
     }
   };
+
+  // Helper for rendering user list
+  const renderUserSelectionList = () => (
+      <div className="border border-slate-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+          {allUsers.filter(u => u.id !== user.id).map(u => (
+              <div key={u.id} className="flex items-center gap-3 p-3 hover:bg-slate-800 transition-colors cursor-pointer" onClick={() => toggleParticipantSelection(u.id)}>
+                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedParticipants.has(u.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-600'}`}>
+                      {selectedParticipants.has(u.id) && <Check className="w-3 h-3 text-white" />}
+                  </div>
+                  <img src={u.avatar} alt={u.name} className="w-8 h-8 rounded-full bg-slate-700" />
+                  <div className="flex-1 overflow-hidden">
+                      <p className="text-sm font-medium text-white truncate">{u.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{u.email}</p>
+                  </div>
+              </div>
+          ))}
+          {allUsers.filter(u => u.id !== user.id).length === 0 && (
+              <div className="p-4 text-center text-slate-500 text-sm">No other users found.</div>
+          )}
+      </div>
+  );
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
@@ -636,7 +684,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
       )}
 
-      {/* SCHEDULE/EDIT MODALS - Same structure but async handlers */}
+      {/* INSTANT MEETING SETUP MODAL */}
+      {showInstantModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto flex flex-col">
+             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Instant Meeting</h3><button onClick={() => setShowInstantModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
+             <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+                <p className="text-sm text-slate-400">Select participants to invite (optional):</p>
+                {renderUserSelectionList()}
+             </div>
+             <div className="p-4 border-t border-slate-800 flex justify-end gap-3">
+                <button onClick={() => setShowInstantModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
+                <button onClick={handleConfirmInstantMeeting} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-medium">Start Meeting</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SCHEDULE MEETING MODAL */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -644,6 +709,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
              <form onSubmit={handleScheduleSubmit} className="p-6 space-y-4">
                 <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.title} onChange={e => setScheduleForm({...scheduleForm, title: e.target.value})} required/></div>
                 <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.date} onChange={e => setScheduleForm({...scheduleForm, date: e.target.value})} required/></div><div><label className="block text-sm text-slate-400 mb-1">Time</label><input type="time" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.time} onChange={e => setScheduleForm({...scheduleForm, time: e.target.value})} required/></div></div>
+                <div>
+                    <label className="block text-sm text-slate-400 mb-1">Invite Participants</label>
+                    {renderUserSelectionList()}
+                </div>
                 <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg">Save</button></div>
              </form>
           </div>
@@ -719,13 +788,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
           <div className="max-w-5xl mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
               <div><h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1><p className="text-slate-400 text-sm md:text-base">Manage your upcoming video conferences</p></div>
-              <button onClick={() => setShowScheduleModal(true)} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto"><Plus className="w-5 h-5" />Schedule Meeting</button>
+              <button onClick={() => { setShowScheduleModal(true); setSelectedParticipants(new Set()); }} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto"><Plus className="w-5 h-5" />Schedule Meeting</button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
-              <div className="bg-gradient-to-br from-orange-500 to-red-600 p-6 rounded-2xl text-white shadow-xl shadow-orange-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={handleInstantMeeting}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Video className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">New Meeting</h3><p className="text-white/70 text-sm">Start an instant meeting</p></div>
+              <div className="bg-gradient-to-br from-orange-500 to-red-600 p-6 rounded-2xl text-white shadow-xl shadow-orange-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={handleInstantMeetingClick}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Video className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">New Meeting</h3><p className="text-white/70 text-sm">Start an instant meeting</p></div>
               <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-blue-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={() => setShowJoinModal(true)}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Plus className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">Join Meeting</h3><p className="text-white/70 text-sm">Join via ID or link</p></div>
-              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl text-white shadow-xl shadow-emerald-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={() => setShowScheduleModal(true)}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Calendar className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">Schedule</h3><p className="text-white/70 text-sm">Plan for later</p></div>
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl text-white shadow-xl shadow-emerald-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={() => { setShowScheduleModal(true); setSelectedParticipants(new Set()); }}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Calendar className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">Schedule</h3><p className="text-white/70 text-sm">Plan for later</p></div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">

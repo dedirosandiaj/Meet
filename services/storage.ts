@@ -28,8 +28,9 @@ export const storageService = {
       }
 
       if (data.status === 'active') {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-        return data as User;
+        const user = data as User;
+        localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+        return user;
       }
       return null;
     } catch (e) {
@@ -51,146 +52,177 @@ export const storageService = {
 
   getAppSettings: async (): Promise<AppSettings> => {
     try {
-      // 1. Try fetching from Supabase
       const { data, error } = await supabase
         .from('app_settings')
         .select('*')
-        .eq('id', 1) // Always fetch ID 1
+        .eq('id', 1)
         .single();
 
-      if (data && !error) {
+      if (data) {
         const settings: AppSettings = { 
             title: data.title, 
             iconUrl: data.icon_url,
             googleDriveClientId: data.google_drive_client_id,
             googleDriveApiKey: data.google_drive_api_key
         };
-        // Cache to local storage
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
         return settings;
       }
     } catch (err) {
-      console.warn("Could not fetch settings from DB, using fallback.");
+      console.warn("Could not fetch settings from Supabase, using fallback.", err);
     }
 
-    // 2. Fallback to LocalStorage if DB is empty or unreachable
     const local = localStorage.getItem(SETTINGS_KEY);
     if (local) return JSON.parse(local);
 
-    // 3. Default
     return DEFAULT_SETTINGS;
   },
 
   updateAppSettings: async (settings: AppSettings): Promise<AppSettings> => {
-    // 1. Save to LocalStorage immediately for instant UI feedback
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-
-    // 2. Upsert to Supabase
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ 
-        id: 1, 
-        title: settings.title, 
+    
+    // Upsert to Supabase
+    await supabase.from('app_settings').upsert({
+        id: 1,
+        title: settings.title,
         icon_url: settings.iconUrl,
         google_drive_client_id: settings.googleDriveClientId,
         google_drive_api_key: settings.googleDriveApiKey
-      }, { onConflict: 'id' });
+    });
 
-    if (error) {
-        console.error("Error saving settings to DB:", error);
-    }
-    
     return settings;
   },
 
   // --- MEETINGS OPERATIONS ---
 
   getMeetings: async (): Promise<Meeting[]> => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .select('*')
-      .order('date', { ascending: true })
-      .order('time', { ascending: true });
+    const currentUser = storageService.getSession();
+    if (!currentUser) return [];
 
-    if (error) {
-      console.error("Error fetching meetings:", error);
-      return [];
+    try {
+        if (currentUser.role === UserRole.ADMIN) {
+            // Admin sees all
+            const { data } = await supabase
+                .from('meetings')
+                .select('*')
+                .order('date', { ascending: true })
+                .order('time', { ascending: true });
+            return (data || []) as Meeting[];
+        } else {
+            // Member sees: 
+            // 1. Meetings they Host
+            const { data: hostedMeetings } = await supabase
+                .from('meetings')
+                .select('*')
+                .eq('host', currentUser.name);
+
+            // 2. Meetings they are invited to
+            const { data: invites } = await supabase
+                .from('meeting_invites')
+                .select('meeting_id')
+                .eq('user_id', currentUser.id);
+            
+            let invitedMeetings: Meeting[] = [];
+            if (invites && invites.length > 0) {
+                const meetingIds = invites.map(i => i.meeting_id);
+                const { data: invitedData } = await supabase
+                    .from('meetings')
+                    .select('*')
+                    .in('id', meetingIds);
+                invitedMeetings = (invitedData || []) as Meeting[];
+            }
+
+            // Merge and deduplicate
+            const hosted = (hostedMeetings || []) as Meeting[];
+            const combined = [...hosted, ...invitedMeetings];
+            const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+            
+            // Sort
+            return unique.sort((a, b) => {
+                const dateA = a.date === 'Today' ? new Date().toISOString() : a.date;
+                const dateB = b.date === 'Today' ? new Date().toISOString() : b.date;
+                return dateA.localeCompare(dateB);
+            });
+        }
+    } catch (e) {
+        console.error("Get Meetings Error", e);
+        return [];
     }
-    return (data as Meeting[]) || [];
   },
 
-  createMeeting: async (meeting: Meeting): Promise<Meeting[]> => {
-    const { error } = await supabase
-      .from('meetings')
-      .insert([meeting]);
+  createMeeting: async (meeting: Meeting, invitedUserIds: string[] = []): Promise<Meeting[]> => {
+    // 1. Create Meeting
+    await supabase.from('meetings').insert({
+        id: meeting.id,
+        title: meeting.title,
+        date: meeting.date,
+        time: meeting.time,
+        host: meeting.host,
+        "participantsCount": meeting.participantsCount, // Quoted to match case-sensitive column
+        status: meeting.status
+    });
+    
+    // 2. Create Invites
+    if (invitedUserIds.length > 0) {
+        const invites = invitedUserIds.map(uid => ({
+            meeting_id: meeting.id,
+            user_id: uid
+        }));
+        await supabase.from('meeting_invites').insert(invites);
+    }
 
-    if (error) console.error("Error creating meeting:", error);
     return storageService.getMeetings();
   },
 
   updateMeeting: async (updatedMeeting: Meeting): Promise<Meeting[]> => {
-    const { error } = await supabase
-      .from('meetings')
-      .update({
+    await supabase.from('meetings').update({
         title: updatedMeeting.title,
         date: updatedMeeting.date,
         time: updatedMeeting.time
-      })
-      .eq('id', updatedMeeting.id);
+    }).eq('id', updatedMeeting.id);
 
-    if (error) console.error("Error updating meeting:", error);
     return storageService.getMeetings();
   },
 
   deleteMeeting: async (id: string): Promise<Meeting[]> => {
-    const { error } = await supabase
-      .from('meetings')
-      .delete()
-      .eq('id', id);
-
-    if (error) console.error("Error deleting meeting:", error);
+    // Cascade delete is handled by Database Foreign Keys usually, 
+    // but explicit delete is safer if FK isn't set up perfectly.
+    await supabase.from('meeting_invites').delete().eq('meeting_id', id);
+    await supabase.from('meetings').delete().eq('id', id);
     return storageService.getMeetings();
   },
 
-  // --- REALTIME PARTICIPANTS & SIGNALING (WebRTC) ---
+  // --- REALTIME PARTICIPANTS & SIGNALING ---
 
-  // User enters the room (DB entry)
   joinMeetingRoom: async (meetingId: string, user: User) => {
-    // Check if already in
-    const { data } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('meeting_id', meetingId)
-      .eq('user_id', user.id);
-    
-    if (!data || data.length === 0) {
-      await supabase.from('participants').insert([{
-        meeting_id: meetingId,
-        user_id: user.id,
-        name: user.name,
-        avatar: user.avatar,
-        role: user.role
-      }]);
+    // Clean up potentially stale entries first (optional but good for hygiene)
+    const { data: existing } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('meeting_id', meetingId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (!existing) {
+        await supabase.from('participants').insert({
+            meeting_id: meetingId,
+            user_id: user.id,
+            name: user.name,
+            avatar: user.avatar,
+            role: user.role
+        });
     }
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
-    await supabase
-      .from('participants')
-      .delete()
-      .eq('meeting_id', meetingId)
-      .eq('user_id', userId);
+    await supabase.from('participants').delete().eq('meeting_id', meetingId).eq('user_id', userId);
   },
 
   getParticipants: async (meetingId: string): Promise<Participant[]> => {
-    const { data } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('meeting_id', meetingId);
-    return (data as Participant[]) || [];
+    const { data } = await supabase.from('participants').select('*').eq('meeting_id', meetingId);
+    return (data || []) as Participant[];
   },
 
-  // Combine DB changes and Broadcast Signaling for WebRTC
   subscribeToMeeting: (
     meetingId: string, 
     onParticipantsUpdate: (participants: Participant[]) => void,
@@ -200,64 +232,80 @@ export const storageService = {
     // Initial fetch
     storageService.getParticipants(meetingId).then(onParticipantsUpdate);
 
-    const channel = supabase.channel(`meeting:${meetingId}`);
+    // Subscribe to DB changes for participants list
+    const channel = supabase.channel(`meeting-${meetingId}`, {
+        config: {
+            presence: { key: meetingId },
+            broadcast: { self: true } // Receive own signals? Usually no, but for multi-tab debugging yes.
+        }
+    });
 
     channel
-      // 1. Listen for DB Changes (List of people)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` },
-        async () => {
-          const updated = await storageService.getParticipants(meetingId);
-          onParticipantsUpdate(updated);
-        }
-      )
-      // 2. Listen for WebRTC Signals (Video/Audio Handshake & Control Signals)
-      .on('broadcast', { event: 'signal' }, (payload) => {
-        onSignal(payload.payload);
-      })
-      .subscribe();
+        // Listen for DB changes on participants table
+        .on(
+            'postgres_changes', 
+            { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, 
+            async (payload) => {
+                // Fetch fresh list on any change
+                const updated = await storageService.getParticipants(meetingId);
+                onParticipantsUpdate(updated);
+            }
+        )
+        // Listen for WebRTC Signals via Broadcast
+        .on('broadcast', { event: 'signal' }, (payload) => {
+             onSignal(payload.payload);
+        })
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                 console.log("Connected to Realtime Channel");
+            }
+        });
 
     return channel;
   },
 
-  // Send a WebRTC Signal to others in the room
-  sendSignal: async (channel: RealtimeChannel, signal: any) => {
-    await channel.send({
-      type: 'broadcast',
-      event: 'signal',
-      payload: signal,
-    });
+  sendSignal: async (channel: any, signal: any) => {
+    if (channel) {
+        await channel.send({
+            type: 'broadcast',
+            event: 'signal',
+            payload: signal
+        });
+        
+        // If join/leave, we rely on Postgres trigger/changes, 
+        // but explicit fetch trigger via Broadcast can speed up UI reaction if DB is slow
+        if (signal.type === 'leave') {
+            // DB delete handles the participant list update via postgres_changes listener
+        }
+    }
   },
 
   // --- USERS OPERATIONS ---
 
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*').order('name');
-    if (error) return [];
-    return (data as User[]) || [];
+    const { data } = await supabase.from('users').select('*').order('name');
+    return (data || []) as User[];
   },
 
   getUserById: async (id: string): Promise<User | undefined> => {
     const { data } = await supabase.from('users').select('*').eq('id', id).single();
-    return data || undefined;
+    return data ? (data as User) : undefined;
   },
 
   getUserByToken: async (token: string): Promise<User | undefined> => {
     const { data } = await supabase.from('users').select('*').eq('token', token).single();
-    return data || undefined;
+    return data ? (data as User) : undefined;
   },
 
   generateUserToken: async (userId: string): Promise<string | null> => {
     const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    const { error } = await supabase.from('users').update({ token: newToken }).eq('id', userId);
-    if (error) return null;
+    await supabase.from('users').update({ token: newToken }).eq('id', userId);
     return newToken;
   },
 
   addUser: async (name: string, email: string, role: UserRole): Promise<User | null> => {
     const newUser: User = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       name,
       email,
       role,
@@ -266,44 +314,36 @@ export const storageService = {
       password: '',
       token: Math.random().toString(36).substring(2, 15)
     };
-
-    const { error } = await supabase.from('users').insert([newUser]);
-    if (error) return null;
+    
+    const { error } = await supabase.from('users').insert(newUser);
+    if (error) {
+        console.error("Add User Error", error);
+        return null;
+    }
     return newUser;
   },
 
   updateUser: async (user: User): Promise<User[]> => {
-    const { error } = await supabase
-      .from('users')
-      .update({
+    await supabase.from('users').update({
         name: user.name,
         email: user.email,
         role: user.role
-      })
-      .eq('id', user.id);
-
-    if (error) console.error("Error updating user:", error);
+    }).eq('id', user.id);
     return storageService.getUsers();
   },
 
   deleteUser: async (id: string): Promise<User[]> => {
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id);
-
-    if (error) console.error("Error deleting user:", error);
+    await supabase.from('users').delete().eq('id', id);
     return storageService.getUsers();
   },
 
   setUserPassword: async (id: string, newPassword: string): Promise<User | null> => {
-    const { error } = await supabase
-      .from('users')
-      .update({ password: newPassword, status: 'active', token: null })
-      .eq('id', id);
-
-    if (error) return null;
-
+    await supabase.from('users').update({
+        password: newPassword,
+        status: 'active',
+        token: null
+    }).eq('id', id);
+    
     const updatedUser = await storageService.getUserById(id);
     if (updatedUser) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));

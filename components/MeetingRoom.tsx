@@ -107,6 +107,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [isWaiting, setIsWaiting] = useState(true);
   const [loading, setLoading] = useState(true);
+  
+  // Instant Exit State
+  const [isLeaving, setIsLeaving] = useState(false);
 
   // Streams & WebRTC
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
@@ -162,7 +165,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     initMeeting();
 
     return () => {
-      // Cleanup on Unmount (e.g. Back button, or view change)
       performCleanup();
     };
   }, [meetingId]);
@@ -377,14 +379,26 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const handleLeave = () => {
-    // 1. Trigger UI Unmount immediately
-    onEndCall();
-    // 2. Cleanup will happen via useEffect return, 
-    // but we can also stop tracks here for immediate effect
+    // 1. Force visual unmount immediately
+    setIsLeaving(true);
+    
+    // 2. Stop local tracks immediately
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
+
+    // 3. Defer parent state update slightly to allow re-render to black screen first if needed, 
+    // although setState is usually fast enough. 
+    setTimeout(() => {
+        onEndCall();
+    }, 0);
   };
 
   // --- RENDER ---
+  
+  // Instant Exit Blank Screen
+  if (isLeaving) {
+    return <div className="h-screen w-full bg-slate-950 flex items-center justify-center"></div>;
+  }
+
   if (loading) return (
     <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
         <div className="w-12 h-12 border-4 border-slate-800 border-t-blue-600 rounded-full animate-spin"></div>
@@ -525,7 +539,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                </div>
                <form onSubmit={(e) => { e.preventDefault(); if(!newMessage.trim()) return; setChatMessages([...chatMessages, {id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true}]); setNewMessage(''); }} className="p-4 border-t border-slate-800 bg-slate-900 pb-8 md:pb-4">
                   <div className="relative">
-                    <input type="text" placeholder="Type a message..." className="w-full bg-slate-800 border border-slate-700 rounded-xl py-3 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
+                    <input type="text" placeholder="Type a message..." className="w-full bg-slate-800 border border-slate-700 rounded-lg py-3 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
                     <button type="submit" className="absolute right-2 top-2 p-1 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"><Send className="w-5 h-5" /></button>
                   </div>
                </form>

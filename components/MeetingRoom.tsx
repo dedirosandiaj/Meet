@@ -18,7 +18,11 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
-  RefreshCcw
+  Minimize2,
+  RefreshCcw,
+  Scaling,
+  Pin,
+  PinOff
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -48,7 +52,6 @@ const useAudioLevel = (stream: MediaStream | null | undefined) => {
       return;
     }
 
-    // Check if stream has audio tracks
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) return;
 
@@ -62,10 +65,9 @@ const useAudioLevel = (stream: MediaStream | null | undefined) => {
 
       const audioContext = audioContextRef.current;
       const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 64; // Smaller FFT size for broader bands (more responsive)
-      analyser.smoothingTimeConstant = 0.5; // Less smoothing for snappier feel
+      analyser.fftSize = 64; 
+      analyser.smoothingTimeConstant = 0.5; 
 
-      // Create source
       const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
       sourceRef.current = source;
@@ -74,19 +76,12 @@ const useAudioLevel = (stream: MediaStream | null | undefined) => {
 
       const updateLevel = () => {
         analyser.getByteFrequencyData(dataArray);
-        
-        // Calculate average volume
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
-        }
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
         const avg = sum / dataArray.length;
-        
-        // Boost sensitivity and cap at 100
         const normalized = Math.min(100, Math.max(0, avg * 2));
         
         setLevel(prev => {
-            // Smooth falloff, instant rise
             if (normalized > prev) return normalized;
             return prev * 0.9; 
         });
@@ -114,7 +109,6 @@ const AudioIndicator = ({ level }: { level: number }) => {
     const h1 = Math.max(baseH, level * 0.15); 
     const h2 = Math.max(baseH, level * 0.3);  
     const h3 = Math.max(baseH, level * 0.15); 
-
     const activeColor = level > 10 ? 'bg-green-500' : 'bg-slate-500';
     const centerColor = level > 10 ? 'bg-green-400' : 'bg-slate-500';
 
@@ -127,20 +121,18 @@ const AudioIndicator = ({ level }: { level: number }) => {
     );
 };
 
-// --- HELPER COMPONENT: ZOOMABLE VIEW (NEW) ---
-const ZoomableView = ({ children, isActive }: { children: React.ReactNode, isActive: boolean }) => {
+// --- HELPER COMPONENT: ZOOMABLE VIEW ---
+const ZoomableView = ({ children, onTogglePin, isPinned, onToggleFit, isFit }: { children: React.ReactNode, onTogglePin: () => void, isPinned: boolean, onToggleFit: () => void, isFit: boolean }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
 
-  if (!isActive) return <>{children}</>;
-
   const handleZoom = (delta: number) => {
     setScale(prev => {
-      const newScale = Math.min(Math.max(1, prev + delta), 4); // Max 4x zoom
-      if (newScale === 1) setPosition({ x: 0, y: 0 }); // Reset pos if zoomed out
+      const newScale = Math.min(Math.max(1, prev + delta), 6); // Max 6x zoom
+      if (newScale === 1) setPosition({ x: 0, y: 0 });
       return newScale;
     });
   };
@@ -150,14 +142,12 @@ const ZoomableView = ({ children, isActive }: { children: React.ReactNode, isAct
     setPosition({ x: 0, y: 0 });
   };
 
-  // Mouse Wheel Zoom
   const handleWheel = (e: React.WheelEvent) => {
-    e.stopPropagation(); // Prevent page scroll
+    e.stopPropagation();
     if (e.deltaY < 0) handleZoom(0.1);
     else handleZoom(-0.1);
   };
 
-  // Dragging Logic
   const onMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (scale === 1) return;
     setIsDragging(true);
@@ -170,11 +160,7 @@ const ZoomableView = ({ children, isActive }: { children: React.ReactNode, isAct
     if (!isDragging) return;
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    
-    setPosition({
-      x: clientX - dragStartRef.current.x,
-      y: clientY - dragStartRef.current.y
-    });
+    setPosition({ x: clientX - dragStartRef.current.x, y: clientY - dragStartRef.current.y });
   };
 
   const onMouseUp = () => setIsDragging(false);
@@ -203,62 +189,65 @@ const ZoomableView = ({ children, isActive }: { children: React.ReactNode, isAct
         {children}
       </div>
 
-      {/* Zoom Controls Overlay */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
-        <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-blue-600 shadow-lg border border-slate-700">
-           <ZoomIn className="w-4 h-4" />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); handleZoom(-0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700">
-           <ZoomOut className="w-4 h-4" />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700">
-           <RefreshCcw className="w-4 h-4" />
-        </button>
+      {/* Advanced Controls Overlay */}
+      <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 pointer-events-none">
+        <div className="pointer-events-auto flex flex-col gap-2">
+            <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }} className={`p-2 backdrop-blur text-white rounded-lg shadow-lg border border-slate-700 transition-colors ${isPinned ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-800/80 hover:bg-slate-700'}`} title={isPinned ? "Unpin (Minimize)" : "Pin (Maximize)"}>
+                {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onToggleFit(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title={isFit ? "Fill Screen" : "Fit to Screen"}>
+                <Scaling className="w-4 h-4" />
+            </button>
+            <div className="h-px bg-slate-700 my-0.5"></div>
+            <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Zoom In">
+                <ZoomIn className="w-4 h-4" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); handleZoom(-0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Zoom Out">
+                <ZoomOut className="w-4 h-4" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Reset View">
+                <RefreshCcw className="w-4 h-4" />
+            </button>
+        </div>
       </div>
       
-      {scale > 1 && (
-         <div className="absolute bottom-4 right-4 px-2 py-1 bg-black/50 text-white text-xs rounded pointer-events-none">
-            {Math.round(scale * 100)}%
-         </div>
-      )}
+      {scale > 1 && <div className="absolute bottom-14 right-3 px-2 py-1 bg-black/60 backdrop-blur text-white text-xs rounded pointer-events-none border border-white/10">{Math.round(scale * 100)}%</div>}
     </div>
   );
 };
 
 // --- HELPER COMPONENT: LOCAL VIDEO ---
-const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User }) => {
+const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user, onPin, isPinned }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User, onPin: () => void, isPinned: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioLevel = useAudioLevel(isMuted ? null : stream);
+  const [isFit, setIsFit] = useState(isScreenSharing); // Default fit for screen share
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      videoRef.current.muted = true; // Always mute local
+      videoRef.current.muted = true;
     }
   }, [stream]);
 
   return (
-    <div className={`relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl group transition-all duration-300 ${audioLevel > 15 ? 'border-green-500/50 shadow-green-500/10' : 'border-slate-800'}`}>
-        <ZoomableView isActive={isScreenSharing}>
+    <div className={`relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl group transition-all duration-300 ${isPinned ? 'border-blue-500/50 shadow-blue-500/20' : (audioLevel > 15 ? 'border-green-500/50 shadow-green-500/10' : 'border-slate-800')}`}>
+        <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}>
           <video 
               ref={videoRef} 
               autoPlay 
               muted 
               playsInline 
-              className={`w-full h-full transition-transform duration-300 ${!isScreenSharing ? 'object-cover transform scale-x-[-1]' : 'object-contain'} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`} 
+              className={`w-full h-full transition-transform duration-300 ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'} ${isFit ? 'object-contain' : 'object-cover'}`} 
           />
         </ZoomableView>
         
         {isVideoOff && !isScreenSharing && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-800 pointer-events-none">
                 <div className="relative">
                     <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-2xl md:text-3xl font-bold text-white shadow-xl">
                         {user.name.charAt(0)}
                     </div>
-                    {/* Pulsing ring for audio when video is off */}
-                    {audioLevel > 10 && (
-                        <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping"></div>
-                    )}
+                    {audioLevel > 10 && <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping"></div>}
                 </div>
             </div>
         )}
@@ -273,9 +262,10 @@ const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }
 };
 
 // --- HELPER COMPONENT: REMOTE VIDEO ---
-const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: MediaStream | undefined, participant: Participant, isScreenSharing: boolean }) => {
+const RemoteVideoPlayer = ({ stream, participant, isScreenSharing, onPin, isPinned }: { stream: MediaStream | undefined, participant: Participant, isScreenSharing: boolean, onPin: () => void, isPinned: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioLevel = useAudioLevel(stream);
+  const [isFit, setIsFit] = useState(isScreenSharing);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -284,14 +274,14 @@ const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: M
   }, [stream]);
 
   return (
-     <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${audioLevel > 15 ? 'border-green-500/50' : 'border-slate-800'}`}>
+     <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${isPinned ? 'border-blue-500/50 shadow-blue-500/20' : (audioLevel > 15 ? 'border-green-500/50' : 'border-slate-800')}`}>
        {stream ? (
-          <ZoomableView isActive={isScreenSharing}>
+          <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}>
             <video 
                 ref={videoRef} 
                 autoPlay 
                 playsInline 
-                className={`w-full h-full bg-slate-900 ${isScreenSharing ? 'object-contain' : 'object-cover'}`}
+                className={`w-full h-full bg-slate-900 ${isFit ? 'object-contain' : 'object-cover'}`}
             />
           </ZoomableView>
        ) : (
@@ -303,7 +293,6 @@ const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: M
           </div>
        )}
        
-       {/* Audio Visualizer Overlay if Video is off but Audio is on */}
        {stream && stream.getVideoTracks().length === 0 && audioLevel > 10 && (
            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-16 h-16 md:w-20 md:h-20 bg-green-500/10 rounded-full animate-pulse flex items-center justify-center">
@@ -326,9 +315,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [isWaiting, setIsWaiting] = useState(true);
   const [loading, setLoading] = useState(true);
-  
-  // Instant Exit State
   const [isLeaving, setIsLeaving] = useState(false);
+
+  // Layout State (Pinning)
+  const [pinnedUserId, setPinnedUserId] = useState<string | null>(null);
 
   // Streams & WebRTC
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
@@ -342,7 +332,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   
-  // Clean up guard
   const isCleaningUp = useRef(false);
 
   // States
@@ -399,7 +388,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       const channel = storageService.subscribeToMeeting(
         meetingId,
         (participants) => {
-          // Sync active participants with DB state
           const others = participants.filter(p => p.user_id !== user.id);
           setActiveParticipants(others);
           
@@ -428,7 +416,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
   }, [isWaiting, webcamStream]); 
 
-  // --- WEBRTC & SIGNALING LOGIC (Same as before) ---
+  // --- WEBRTC CORE (Simplified for brevity - logic unchanged) ---
   const createPeerConnection = (targetUserId: string) => {
     if (peerConnections.current.has(targetUserId)) {
         return peerConnections.current.get(targetUserId);
@@ -486,6 +474,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     if (signal.type === 'leave') {
         setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
         closePeerConnection(signal.from);
+        if (pinnedUserId === signal.from) setPinnedUserId(null); // Unpin if leaver was pinned
         return;
     }
     if (signal.type === 'chat') {
@@ -516,33 +505,25 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     try {
         switch (type) {
         case 'ready':
-            {
-            const pc = createPeerConnection(from)!;
-            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-            await pc.setLocalDescription(offer);
+            const pc1 = createPeerConnection(from)!;
+            const offer = await pc1.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+            await pc1.setLocalDescription(offer);
             storageService.sendSignal(channel, { type: 'offer', sdp: offer, from: user.id, to: from });
-            }
             break;
         case 'offer':
-            {
-            const pc = createPeerConnection(from)!;
-            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+            const pc2 = createPeerConnection(from)!;
+            await pc2.setRemoteDescription(new RTCSessionDescription(sdp));
+            const answer = await pc2.createAnswer();
+            await pc2.setLocalDescription(answer);
             storageService.sendSignal(channel, { type: 'answer', sdp: answer, from: user.id, to: from });
-            }
             break;
         case 'answer':
-            {
-            const pc = peerConnections.current.get(from);
-            if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-            }
+            const pc3 = peerConnections.current.get(from);
+            if (pc3) await pc3.setRemoteDescription(new RTCSessionDescription(sdp));
             break;
         case 'candidate':
-            {
-            const pc = peerConnections.current.get(from);
-            if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            }
+            const pc4 = peerConnections.current.get(from);
+            if (pc4 && candidate) await pc4.addIceCandidate(new RTCIceCandidate(candidate));
             break;
         }
     } catch (err) {
@@ -550,7 +531,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
-  // --- CHAT & MEDIA HANDLERS (Same as before) ---
+  // --- ACTIONS ---
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -633,6 +614,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
+  const handlePin = (id: string) => {
+      if (pinnedUserId === id) {
+          setPinnedUserId(null); // Unpin
+      } else {
+          setPinnedUserId(id); // Pin
+      }
+  };
+
   const performCleanup = () => {
     if (isCleaningUp.current) return;
     isCleaningUp.current = true;
@@ -671,11 +660,42 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
 
+  // Layout Logic
+  const isPinnedMode = pinnedUserId !== null;
+  
+  // Helper to render local user
+  const renderLocalUser = (isInGrid: boolean) => (
+      <div className={`relative w-full ${isInGrid ? (activeParticipants.length === 0 ? 'aspect-[3/4] md:aspect-video' : 'aspect-video') : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
+          <LocalVideoPlayer 
+              stream={localStreamDisplay} 
+              isMuted={isMuted} 
+              isVideoOff={isVideoOff} 
+              isScreenSharing={isScreenSharing} 
+              user={user} 
+              onPin={() => handlePin('local')}
+              isPinned={pinnedUserId === 'local'}
+          />
+      </div>
+  );
+
+  // Helper to render a remote user
+  const renderRemoteUser = (p: Participant, isInGrid: boolean) => (
+      <div className={`relative w-full ${isInGrid ? 'aspect-video' : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
+          <RemoteVideoPlayer 
+              stream={remoteStreams.get(p.user_id)} 
+              participant={p} 
+              isScreenSharing={remoteScreenShares.has(p.user_id)} 
+              onPin={() => handlePin(p.user_id)}
+              isPinned={pinnedUserId === p.user_id}
+          />
+      </div>
+  );
+
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden">
       <div className="flex-1 flex flex-col h-full relative">
         
-        {/* Header - Optimized for Mobile */}
+        {/* Header */}
         <div className="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-10 flex justify-between items-start pointer-events-none">
           <div className="bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 pointer-events-auto shadow-lg max-w-[calc(100%-80px)]">
              <div className="flex items-center gap-2 md:gap-3">
@@ -691,8 +711,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           </div>
         </div>
 
-        {/* Video Grid - Safe Area Padding */}
-        <div className="flex-1 p-2 pt-20 pb-32 md:p-4 md:pt-24 md:pb-24 overflow-y-auto custom-scrollbar">
+        {/* Video Area */}
+        <div className="flex-1 p-2 pt-20 pb-32 md:p-4 md:pt-24 md:pb-24 overflow-hidden relative">
            {permissionError && (
              <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-950/90 backdrop-blur-sm px-4">
                 <div className="text-center p-6 bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm">
@@ -704,25 +724,51 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
              </div>
            )}
 
-           {/* Responsive Grid Layout */}
-           <div className={`grid gap-2 md:gap-4 h-full content-center transition-all duration-300 ${
-              activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 
-              activeParticipants.length === 1 ? 'grid-cols-1 md:grid-cols-2' :
-              'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-           }`}>
-               {/* Use Aspect Ratio to ensure good fit on mobile */}
-               <div className={`w-full ${activeParticipants.length === 0 ? 'aspect-[3/4] md:aspect-video' : 'aspect-video'} relative`}>
-                 <LocalVideoPlayer stream={localStreamDisplay} isMuted={isMuted} isVideoOff={isVideoOff} isScreenSharing={isScreenSharing} user={user} />
+           {/* --- LAYOUT LOGIC --- */}
+           {!isPinnedMode ? (
+               // GRID LAYOUT
+               <div className="h-full overflow-y-auto custom-scrollbar">
+                   <div className={`grid gap-2 md:gap-4 h-full content-center transition-all duration-300 ${
+                      activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 
+                      activeParticipants.length === 1 ? 'grid-cols-1 md:grid-cols-2' :
+                      'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+                   }`}>
+                       {renderLocalUser(true)}
+                       {activeParticipants.map((p) => (
+                           <div key={p.user_id}>{renderRemoteUser(p, true)}</div>
+                       ))}
+                   </div>
                </div>
-               {activeParticipants.map((p) => (
-                 <div key={p.user_id} className="relative aspect-video w-full">
-                    <RemoteVideoPlayer stream={remoteStreams.get(p.user_id)} participant={p} isScreenSharing={remoteScreenShares.has(p.user_id)} />
-                 </div>
-               ))}
-           </div>
+           ) : (
+               // PINNED (SPOTLIGHT) LAYOUT
+               <div className="flex flex-col md:flex-row h-full gap-2 md:gap-4">
+                   {/* Main Stage (Pinned) */}
+                   <div className="flex-1 rounded-2xl overflow-hidden bg-black shadow-2xl relative order-1 md:order-2">
+                       {pinnedUserId === 'local' 
+                           ? renderLocalUser(false) 
+                           : activeParticipants.filter(p => p.user_id === pinnedUserId).map(p => renderRemoteUser(p, false))
+                       }
+                   </div>
+
+                   {/* Side Strip (Others) */}
+                   <div className="h-32 md:h-full md:w-64 overflow-x-auto md:overflow-y-auto flex md:flex-col gap-2 order-2 md:order-1 shrink-0 no-scrollbar">
+                       {/* Show everyone who is NOT pinned */}
+                       {pinnedUserId !== 'local' && (
+                           <div className="min-w-[160px] md:min-w-0 md:h-40 shrink-0 aspect-video rounded-xl overflow-hidden border border-slate-800">
+                               {renderLocalUser(false)}
+                           </div>
+                       )}
+                       {activeParticipants.filter(p => p.user_id !== pinnedUserId).map(p => (
+                           <div key={p.user_id} className="min-w-[160px] md:min-w-0 md:h-40 shrink-0 aspect-video rounded-xl overflow-hidden border border-slate-800">
+                               {renderRemoteUser(p, false)}
+                           </div>
+                       ))}
+                   </div>
+               </div>
+           )}
         </div>
 
-        {/* Controls - Scrollable for Mobile */}
+        {/* Controls */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-40 w-[95%] max-w-fit">
           <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-x-auto no-scrollbar">
              <div className="flex items-center justify-between gap-2 p-2 md:px-6 md:py-3 min-w-max">

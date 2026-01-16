@@ -230,7 +230,7 @@ function App() {
   return (
     <>
       {view === 'LOGIN' || !user ? (
-        <Login onLogin={handleLogin} />
+        <Login onLogin={handleLogin} appSettings={appSettings} />
       ) : (
         <Dashboard 
           user={user} 

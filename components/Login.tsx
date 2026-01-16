@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { User } from '../types';
+import { User, AppSettings } from '../types';
 import { storageService } from '../services/storage';
-import { Video, Lock, Mail, Loader2 } from 'lucide-react';
+import { Lock, Mail, Loader2 } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (user: User) => void;
+  appSettings: AppSettings;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, appSettings }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,24 +30,19 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
   };
 
-  const fillCredentials = (type: 'admin' | 'member') => {
-    if (type === 'admin') {
-      setEmail('admin@test.com');
-      setPassword('password123');
-    } else {
-      setEmail('member@test.com');
-      setPassword('password123');
-    }
-  };
-
   return (
     <div className="flex h-screen w-full items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950">
       <div className="w-full max-w-md p-8 bg-slate-900/50 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl">
         <div className="flex flex-col items-center mb-8">
-          <div className="p-3 bg-blue-600 rounded-xl shadow-lg shadow-blue-500/20 mb-4">
-            <Video className="w-8 h-8 text-white" />
+          <div className="w-20 h-20 mb-4 relative flex items-center justify-center bg-slate-800/30 rounded-2xl border border-slate-700/50 p-3 shadow-lg">
+             <img 
+               src={appSettings.iconUrl} 
+               alt="App Logo" 
+               className="w-full h-full object-contain drop-shadow-md"
+               onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}}
+             />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Welcome Back</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">{appSettings.title}</h1>
           <p className="text-slate-400 mt-2">Sign in to join your meetings</p>
         </div>
 
@@ -99,24 +95,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sign In'}
           </button>
         </form>
-
-        <div className="mt-8 pt-6 border-t border-slate-800">
-          <p className="text-xs text-slate-500 text-center mb-3">Quick Login (Requires DB Seeding)</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button 
-              onClick={() => fillCredentials('admin')}
-              className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors border border-slate-700"
-            >
-              Admin Demo
-            </button>
-            <button 
-              onClick={() => fillCredentials('member')}
-              className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg transition-colors border border-slate-700"
-            >
-              Member Demo
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

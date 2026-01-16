@@ -1,0 +1,9 @@
+{
+  "name": "ZoomClone AI",
+  "description": "A robust video conferencing application featuring role-based dashboards, real-time camera preview, and meeting management.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ]
+}

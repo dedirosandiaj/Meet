@@ -7,7 +7,9 @@ const SETTINGS_KEY = 'zoomclone_settings';
 
 const DEFAULT_SETTINGS: AppSettings = {
   title: 'ZoomClone AI',
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png' // Default generic video icon
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png', // Default generic video icon
+  googleDriveClientId: '',
+  googleDriveApiKey: ''
 };
 
 export const storageService = {
@@ -59,7 +61,12 @@ export const storageService = {
         .single();
 
       if (data && !error) {
-        const settings = { title: data.title, iconUrl: data.icon_url };
+        const settings: AppSettings = { 
+            title: data.title, 
+            iconUrl: data.icon_url,
+            googleDriveClientId: data.google_drive_client_id || '',
+            googleDriveApiKey: data.google_drive_api_key || ''
+        };
         // Cache to local storage
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
         return settings;
@@ -81,17 +88,20 @@ export const storageService = {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 
     // 2. Upsert to Supabase
+    // Note: Ensure your Supabase table 'app_settings' has columns: google_drive_client_id (text), google_drive_api_key (text)
     const { error } = await supabase
       .from('app_settings')
       .upsert({ 
         id: 1, 
         title: settings.title, 
-        icon_url: settings.iconUrl 
+        icon_url: settings.iconUrl,
+        google_drive_client_id: settings.googleDriveClientId,
+        google_drive_api_key: settings.googleDriveApiKey
       }, { onConflict: 'id' });
 
     if (error) {
         console.error("Error saving settings to DB:", error);
-        alert("Failed to save to database. Check database permissions (RLS).");
+        // We don't block the UI update even if DB fails, relying on LocalStorage for the session
     }
     
     // Return the settings object passed in so the UI updates optimistically
@@ -207,7 +217,8 @@ export const storageService = {
           onParticipantsUpdate(updated);
         }
       )
-      // 2. Listen for WebRTC Signals (Video/Audio Handshake)
+      // 2. Listen for WebRTC Signals (Video/Audio Handshake & Control Signals)
+      // Supports: 'signal' (WebRTC), 'chat', 'screen-toggle', 'leave', 'force-end'
       .on('broadcast', { event: 'signal' }, (payload) => {
         onSignal(payload.payload);
       })

@@ -44,6 +44,8 @@ export interface Participant {
 export interface AppSettings {
   title: string;
   iconUrl: string;
+  googleDriveClientId?: string;
+  googleDriveApiKey?: string;
 }
 
 export type AppView = 'LOGIN' | 'DASHBOARD' | 'MEETING' | 'SET_PASSWORD';

@@ -94,6 +94,14 @@ const runMigrations = () => {
       participantsCount INTEGER,
       status TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY,
+      title TEXT,
+      icon_url TEXT,
+      google_drive_client_id TEXT,
+      google_drive_api_key TEXT
+    );
   `;
   db.run(schema);
   saveDatabase();
@@ -115,6 +123,13 @@ const seedData = () => {
     meetingStmt.run([m.id, m.title, m.date, m.time, m.host, m.participantsCount, m.status]);
   });
   meetingStmt.free();
+
+  // Seed Default App Settings
+  // Check if settings exist first to avoid overwrite on re-seed logic if we expand this later
+  const existingSettings = db.exec("SELECT * FROM app_settings WHERE id = 1");
+  if (existingSettings.length === 0) {
+      db.run("INSERT INTO app_settings (id, title, icon_url, google_drive_client_id, google_drive_api_key) VALUES (1, 'ZoomClone AI', 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png', '', '')");
+  }
   
   saveDatabase();
   console.log("Database: Seeded successfully.");

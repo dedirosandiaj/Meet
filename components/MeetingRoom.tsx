@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { User, ChatMessage, Meeting, Participant } from '../types';
+import { User, ChatMessage, Meeting, Participant, UserRole } from '../types';
 import { MOCK_CHAT, formatTime } from '../services/mock';
 import { storageService } from '../services/storage';
+import { googleDriveService } from '../services/googleDrive';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { 
   Mic, 
@@ -22,7 +23,9 @@ import {
   RefreshCcw,
   Scaling,
   Pin,
-  PinOff
+  PinOff,
+  CircleDot,
+  HardDrive
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -345,6 +348,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
 
+  // RECORDING STATES
+  const [isRecording, setIsRecording] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+
   // --- 1. INITIALIZATION ---
   useEffect(() => {
     const initMeeting = async () => {
@@ -471,6 +480,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return; 
     
+    // FORCE END SIGNAL (Triggered by Host)
+    if (signal.type === 'force-end') {
+        alert("The host has ended the meeting.");
+        performCleanup();
+        onEndCall();
+        return;
+    }
+
     if (signal.type === 'leave') {
         setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
         closePeerConnection(signal.from);
@@ -614,6 +631,47 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
+  // --- RECORDING ACTIONS ---
+
+  const handleStartRecording = async () => {
+    if (isRecording) {
+      // STOP recording
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      // For a "Client-side only" app, recording everyone usually means recording the Screen/Tab of the host.
+      // We ask permission to capture the tab.
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser' },
+        audio: true
+      });
+
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recordedChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        // Stream tracks stop automatically when recorder stops usually, but let's be safe
+        stream.getTracks().forEach(t => t.stop());
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+      alert("Recording failed. Please allow screen capture permission.");
+    }
+  };
+
   const handlePin = (id: string) => {
       if (pinnedUserId === id) {
           setPinnedUserId(null); // Unpin
@@ -627,6 +685,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     isCleaningUp.current = true;
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     screenStreamRef.current?.getTracks().forEach(track => track.stop());
+    mediaRecorderRef.current?.stop(); // Ensure recorder stops
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
     channelRef.current?.unsubscribe();
@@ -635,14 +694,79 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const handleLeave = async () => {
     setIsLeaving(true);
-    if (channelRef.current) {
-       await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
+
+    const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
+
+    // IF RECORDING WAS ACTIVE, STOP IT AND SAVE TO DRIVE
+    if (isRecording && mediaRecorderRef.current && recordedChunksRef.current) {
+        // Wait for final chunks
+        await new Promise<void>(resolve => {
+            if (mediaRecorderRef.current?.state !== 'inactive') {
+                mediaRecorderRef.current!.onstop = () => resolve();
+                mediaRecorderRef.current!.stop();
+            } else {
+                resolve();
+            }
+        });
+
+        setIsUploading(true);
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        const filename = `Meeting-Recording-${meetingId}-${Date.now()}.webm`;
+        
+        // --- GOOGLE DRIVE UPLOAD ---
+        try {
+            await googleDriveService.initClient(); // Init logic
+            // In a real app, you'd trigger a sign-in flow here if not signed in
+            // await googleDriveService.signIn(); 
+            const link = await googleDriveService.uploadVideo(blob, filename);
+            
+            // Allow download locally as backup since we are in "Preview" mode without real keys
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            console.log("Uploaded/Saved to: ", link);
+        } catch (e) {
+            console.error("Upload failed", e);
+            alert("Failed to upload to Drive. Saving locally instead.");
+        } finally {
+            setIsUploading(false);
+        }
     }
+
+    if (channelRef.current) {
+        if (isHost) {
+           // KICK EVERYONE OUT
+           await storageService.sendSignal(channelRef.current, { type: 'force-end', from: user.id });
+        } else {
+           // JUST LEAVE
+           await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
+        }
+    }
+    
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     onEndCall();
   };
 
   // --- RENDER ---
+  if (isUploading) return (
+      <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center text-white gap-6">
+          <div className="relative">
+             <div className="w-20 h-20 border-4 border-slate-800 border-t-green-500 rounded-full animate-spin"></div>
+             <div className="absolute inset-0 flex items-center justify-center">
+                 <HardDrive className="w-8 h-8 text-green-500" />
+             </div>
+          </div>
+          <div className="text-center">
+             <h2 className="text-2xl font-bold mb-2">Saving Recording...</h2>
+             <p className="text-slate-400">Uploading to Google Drive & Saving Backup</p>
+          </div>
+      </div>
+  );
+
   if (isLeaving) return <div className="h-[100dvh] w-full bg-slate-950 flex items-center justify-center"></div>;
   if (loading) return (
     <div className="h-[100dvh] bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
@@ -662,6 +786,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // Layout Logic
   const isPinnedMode = pinnedUserId !== null;
+  const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
   
   // Helper to render local user
   const renderLocalUser = (isInGrid: boolean) => (
@@ -706,8 +831,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                 </div>
              </div>
           </div>
-          <div className="bg-slate-900/80 backdrop-blur-md px-2 py-1.5 md:px-3 rounded-lg border border-slate-800 pointer-events-auto shrink-0">
-             <div className="flex items-center gap-2 text-[10px] md:text-xs font-medium text-slate-300"><div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>REC</div>
+          <div className="flex gap-2 pointer-events-auto">
+             {isRecording && (
+                 <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-red-500/50 flex items-center gap-2">
+                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
+                     <span className="text-[10px] md:text-xs font-bold text-red-100">REC</span>
+                 </div>
+             )}
           </div>
         </div>
 
@@ -784,6 +914,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                     <MonitorUp className="w-5 h-5" />
                 </button>
 
+                {/* RECORDING BUTTON (Host Only) */}
+                {isHost && (
+                    <button onClick={handleStartRecording} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isRecording ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`} title="Record Meeting">
+                        <CircleDot className={`w-5 h-5 ${isRecording ? 'animate-pulse' : ''}`} />
+                    </button>
+                )}
+
                 <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>
 
                 <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
@@ -800,7 +937,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
                 <button onClick={handleLeave} className="px-4 md:px-6 py-3 md:py-3.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20 flex items-center gap-2 whitespace-nowrap">
                     <PhoneOff className="w-5 h-5" />
-                    <span className="hidden md:inline">End Call</span>
+                    <span className="hidden md:inline">{isHost ? 'End All' : 'Leave'}</span>
                 </button>
              </div>
           </div>

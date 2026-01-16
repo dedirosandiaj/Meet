@@ -474,7 +474,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         const baseUrl = window.location.origin;
         const resetUrl = `${baseUrl}/reset/${newToken}`;
         
-        await emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
+        // Wait for email service result
+        const success = await emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
+        
+        // Show success notification if sent successfully
+        if (success) {
+            const event = new CustomEvent('zoomclone-toast', {
+                detail: {
+                    type: 'success',
+                    title: 'Reset Email Sent',
+                    message: `Password reset instructions sent to ${targetUser.email}`
+                }
+            });
+            window.dispatchEvent(event);
+        }
         
         // Refresh to show updated token state if needed
         const updatedUsers = await storageService.getUsers();

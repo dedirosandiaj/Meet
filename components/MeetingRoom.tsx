@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { User, ChatMessage, Meeting, Participant, UserRole } from '../types';
 import { MOCK_CHAT, formatTime } from '../services/mock';
@@ -23,7 +24,11 @@ import {
   Scaling,
   Pin,
   PinOff,
-  AlertTriangle
+  AlertTriangle,
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Loader2
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -38,6 +43,131 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' }
   ]
+};
+
+// --- HELPER: PARSE DATE TIME ---
+const parseMeetingDateTime = (dateStr: string, timeStr: string): Date => {
+  const now = new Date();
+  let targetDate = new Date();
+
+  // Handle Date
+  if (dateStr === 'Today') {
+    // Keep today
+  } else if (dateStr === 'Tomorrow') {
+    targetDate.setDate(now.getDate() + 1);
+  } else {
+    // Try parse "Nov 12"
+    const parsed = new Date(dateStr + ` ${now.getFullYear()}`); // Append current year
+    if (!isNaN(parsed.getTime())) {
+      targetDate = parsed;
+    }
+  }
+
+  // Handle Time (e.g., "14:30" or "2:30 PM" - assuming 24h format from input for simplicity based on previous code)
+  // Dashboard input was type="time" which returns "HH:MM" (24h)
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  
+  if (!isNaN(hours) && !isNaN(minutes)) {
+    targetDate.setHours(hours, minutes, 0, 0);
+  }
+
+  return targetDate;
+};
+
+// --- COMPONENT: COUNTDOWN VIEW ---
+const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate: Date, meeting: Meeting, onBack: () => void, onComplete: () => void }) => {
+  const [timeLeft, setTimeLeft] = useState<{days: number, hours: number, minutes: number, seconds: number} | null>(null);
+
+  useEffect(() => {
+    const calculateTime = () => {
+      const now = new Date().getTime();
+      const distance = targetDate.getTime() - now;
+
+      if (distance < 0) {
+        onComplete(); // Time is up!
+        return;
+      }
+
+      setTimeLeft({
+        days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+        seconds: Math.floor((distance % (1000 * 60)) / 1000)
+      });
+    };
+
+    calculateTime(); // Initial call
+    const timer = setInterval(calculateTime, 1000);
+
+    return () => clearInterval(timer);
+  }, [targetDate, onComplete]);
+
+  if (!timeLeft) return (
+      <div className="h-full w-full flex items-center justify-center bg-slate-950">
+          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+  );
+
+  return (
+    <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Background Elements */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px]"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[100px]"></div>
+        </div>
+
+        <div className="relative z-10 w-full max-w-2xl text-center">
+            <div className="mb-8">
+                <span className="inline-block py-1 px-3 rounded-full bg-blue-500/10 text-blue-400 text-xs font-semibold tracking-wider uppercase mb-4 border border-blue-500/20">
+                    Upcoming Meeting
+                </span>
+                <h1 className="text-3xl md:text-5xl font-bold text-white mb-4 tracking-tight">{meeting.title}</h1>
+                <div className="flex items-center justify-center gap-6 text-slate-400 text-sm md:text-base">
+                    <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 md:w-5 md:h-5 text-slate-500" />
+                        <span>{meeting.date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 md:w-5 md:h-5 text-slate-500" />
+                        <span>Hosted by {meeting.host}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Timer Grid */}
+            <div className="grid grid-cols-4 gap-2 md:gap-4 mb-12">
+                {[
+                    { label: 'Days', value: timeLeft.days },
+                    { label: 'Hours', value: timeLeft.hours },
+                    { label: 'Minutes', value: timeLeft.minutes },
+                    { label: 'Seconds', value: timeLeft.seconds }
+                ].map((item, idx) => (
+                    <div key={idx} className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col items-center justify-center shadow-xl">
+                        <span className="text-2xl md:text-5xl font-mono font-bold text-white mb-1 md:mb-2 tabular-nums">
+                            {String(item.value).padStart(2, '0')}
+                        </span>
+                        <span className="text-[10px] md:text-xs text-slate-500 uppercase tracking-widest font-semibold">
+                            {item.label}
+                        </span>
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex flex-col items-center gap-4">
+                <p className="text-slate-400 text-sm animate-pulse">
+                    You will automatically join the room when the meeting starts.
+                </p>
+                <button 
+                    onClick={onBack}
+                    className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all border border-slate-700 hover:border-slate-600 group"
+                >
+                    <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                    Back to Dashboard
+                </button>
+            </div>
+        </div>
+    </div>
+  );
 };
 
 // --- CUSTOM HOOK: AUDIO LEVEL VISUALIZER ---
@@ -315,6 +445,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   // Meeting Data
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [isWaiting, setIsWaiting] = useState(true);
+  const [targetDate, setTargetDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLeaving, setIsLeaving] = useState(false);
 
@@ -358,12 +489,18 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         setMeeting(found);
         
         let shouldWait = false;
+        let tDate: Date | null = null;
+
         if (found.status !== 'live') {
-           if (found.date !== 'Today' && found.date !== 'Tomorrow') {
-             const parsed = new Date(found.date);
-             if (!isNaN(parsed.getTime()) && parsed > new Date()) shouldWait = true;
-           }
+            tDate = parseMeetingDateTime(found.date, found.time);
+            const now = new Date();
+            // If the calculated time is in the future, wait
+            if (tDate > now) {
+                shouldWait = true;
+            }
         }
+        
+        setTargetDate(tDate);
         setIsWaiting(shouldWait);
         
         if (!shouldWait) {
@@ -661,15 +798,35 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     onEndCall();
   };
 
+  const handleCountdownComplete = () => {
+    setIsWaiting(false);
+    startWebcam();
+  };
+
   // --- RENDER ---
 
   if (isLeaving) return <div className="h-[100dvh] w-full bg-slate-950 flex items-center justify-center"></div>;
+  
   if (loading) return (
     <div className="h-[100dvh] bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
         <div className="w-12 h-12 border-4 border-slate-800 border-t-blue-600 rounded-full animate-spin"></div>
         <p className="text-slate-400 font-mono text-sm">Joining Room...</p>
     </div>
   );
+
+  // COUNTDOWN VIEW
+  if (isWaiting && targetDate && meeting) {
+    return (
+        <CountdownView 
+            targetDate={targetDate} 
+            meeting={meeting} 
+            onBack={onEndCall} 
+            onComplete={handleCountdownComplete} 
+        />
+    );
+  }
+
+  // FALLBACK WAITING (If no target date but status is not live)
   if (isWaiting) return (
       <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4">
         <h1 className="text-2xl font-bold text-white mb-4">Waiting for Host</h1>

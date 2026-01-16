@@ -50,17 +50,22 @@ export const storageService = {
   // --- APP SETTINGS (Global Config) ---
 
   getAppSettings: async (): Promise<AppSettings> => {
-    // 1. Try fetching from Supabase
-    const { data } = await supabase
-      .from('app_settings')
-      .select('*')
-      .single();
+    try {
+      // 1. Try fetching from Supabase
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('id', 1) // Always fetch ID 1
+        .single();
 
-    if (data) {
-      const settings = { title: data.title, iconUrl: data.icon_url };
-      // Cache to local storage
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      return settings;
+      if (data && !error) {
+        const settings = { title: data.title, iconUrl: data.icon_url };
+        // Cache to local storage
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+        return settings;
+      }
+    } catch (err) {
+      console.warn("Could not fetch settings from DB, using fallback.");
     }
 
     // 2. Fallback to LocalStorage if DB is empty or unreachable
@@ -72,20 +77,24 @@ export const storageService = {
   },
 
   updateAppSettings: async (settings: AppSettings): Promise<AppSettings> => {
-    // Save to LocalStorage immediately for instant UI feedback
+    // 1. Save to LocalStorage immediately for instant UI feedback
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 
-    // Upsert to Supabase (We use fixed ID 1 for the global config)
+    // 2. Upsert to Supabase
     const { error } = await supabase
       .from('app_settings')
       .upsert({ 
         id: 1, 
         title: settings.title, 
         icon_url: settings.iconUrl 
-      });
+      }, { onConflict: 'id' });
 
-    if (error) console.error("Error saving settings to DB:", error);
+    if (error) {
+        console.error("Error saving settings to DB:", error);
+        alert("Failed to save to database. Check database permissions (RLS).");
+    }
     
+    // Return the settings object passed in so the UI updates optimistically
     return settings;
   },
 

@@ -420,12 +420,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     setSendingInviteId(targetUser.id);
     try {
         const token = await ensureUserToken(targetUser);
-        if (!token) return;
+        if (!token) {
+           setSendingInviteId(null);
+           return;
+        }
 
         const baseUrl = window.location.origin;
         const inviteUrl = `${baseUrl}/setup/${token}`;
         
-        await emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
+        // Wait for email service
+        const success = await emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
+        
+        // Only show success alert if true (Error alert handled by service)
+        if (success) {
+            const event = new CustomEvent('zoomclone-toast', {
+                detail: {
+                    type: 'success',
+                    title: 'Invitation Sent',
+                    message: `Invitation email sent successfully to ${targetUser.email}`
+                }
+            });
+            window.dispatchEvent(event);
+        }
     } catch (e) {
         console.error("Invite Email Error:", e);
     } finally {

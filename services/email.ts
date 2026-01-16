@@ -24,8 +24,9 @@ export const emailService = {
   /**
    * Mengirim email menggunakan EmailJS.
    * Jika konfigurasi belum diisi atau gagal, akan fallback ke mailto.
+   * Returns true if successful, false otherwise.
    */
-  sendEmail: async (to: string, subject: string, bodyText: string, appSettings: AppSettings) => {
+  sendEmail: async (to: string, subject: string, bodyText: string, appSettings: AppSettings): Promise<boolean> => {
     console.log(`Attempting to send email to ${to} via EmailJS...`);
 
     // Cek apakah user sudah mengganti placeholder
@@ -33,7 +34,7 @@ export const emailService = {
         console.warn("EmailJS credentials not configured in services/email.ts");
         triggerToast('error', 'Configuration Missing', "Konfigurasi EmailJS belum diset. Membuka aplikasi email default.");
         emailService.openMailClient(to, subject, bodyText);
-        return;
+        return false;
     }
 
     try {
@@ -62,11 +63,7 @@ export const emailService = {
 
       if (response.status === 200) {
         console.log('SUCCESS!', response.status, response.text);
-        
-        // --- NEW POPUP NOTIFICATION ---
-        // triggerToast('success', 'Email Sent Successfully', `Email has been sent to ${to}.\n\nSubject: "${subject}"`);
-        // Commented out toast for meeting invites to avoid spamming UI when inviting many people
-        
+        return true;
       } else {
         throw new Error(`EmailJS returned status: ${response.status}`);
       }
@@ -79,6 +76,7 @@ export const emailService = {
       
       // Fallback: Buka aplikasi email user
       emailService.openMailClient(to, subject, bodyText);
+      return false;
     }
   },
 
@@ -99,7 +97,7 @@ If you did not expect this invitation, please ignore this email.
 
 ${appSettings.title} Team`;
 
-    emailService.sendEmail(email, subject, body, appSettings);
+    return emailService.sendEmail(email, subject, body, appSettings);
   },
 
   sendPasswordReset: (email: string, name: string, resetLink: string, appSettings: AppSettings) => {
@@ -119,7 +117,7 @@ This link is valid for one-time use.
 
 ${appSettings.title} Team`;
 
-    emailService.sendEmail(email, subject, body, appSettings);
+    return emailService.sendEmail(email, subject, body, appSettings);
   },
 
   sendMeetingInvite: (email: string, name: string, meeting: Meeting, appSettings: AppSettings) => {
@@ -146,7 +144,7 @@ Please join at the scheduled time.
 
 ${appSettings.title} Team`;
 
-    emailService.sendEmail(email, subject, body, appSettings);
+    return emailService.sendEmail(email, subject, body, appSettings);
   },
 
   openMailClient: (to: string, subject: string, body: string) => {

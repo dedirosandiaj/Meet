@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { storageService } from '../services/storage';
-import { Video, Lock, Mail } from 'lucide-react';
+import { Video, Lock, Mail, Loader2 } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -11,18 +11,21 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // Use Storage Service to validate credentials
-    const user = storageService.login(email, password);
+    // Use Storage Service to validate credentials via Supabase
+    const user = await storageService.login(email, password);
     
     if (user) {
       onLogin(user);
     } else {
-      setError('Invalid email or password. Please try again.');
+      setError('Invalid email, password, or account inactive.');
+      setLoading(false);
     }
   };
 
@@ -90,14 +93,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <button
             type="submit"
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow-lg shadow-blue-500/20 transition-all transform hover:scale-[1.02] focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900"
+            disabled={loading}
+            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg shadow-lg shadow-blue-500/20 transition-all transform hover:scale-[1.02] focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Sign In
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sign In'}
           </button>
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-800">
-          <p className="text-xs text-slate-500 text-center mb-3">Quick Login for Testing</p>
+          <p className="text-xs text-slate-500 text-center mb-3">Quick Login (Requires DB Seeding)</p>
           <div className="grid grid-cols-2 gap-3">
             <button 
               onClick={() => fillCredentials('admin')}

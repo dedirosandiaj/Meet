@@ -4,14 +4,14 @@ import Dashboard from './components/Dashboard';
 import MeetingRoom from './components/MeetingRoom';
 import SetPassword from './components/SetPassword';
 import { User, AppView, Meeting } from './types';
-import { storageService, initDatabase } from './services/storage';
-import { Video, Calendar, HelpCircle, X, Check, ArrowRight, Database } from 'lucide-react';
+import { storageService } from './services/storage';
+import { Video, ArrowRight, Database } from 'lucide-react';
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<AppView>('LOGIN');
   const [loading, setLoading] = useState(true);
-  const [loadingMsg, setLoadingMsg] = useState('Initializing App...');
+  const [loadingMsg, setLoadingMsg] = useState('Connecting to Cloud...');
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
   
   // State for pending join (from URL)
@@ -22,19 +22,14 @@ function App() {
   const [setupToken, setSetupToken] = useState<string | null>(null);
   const [passwordMode, setPasswordMode] = useState<'setup' | 'reset'>('setup');
 
-  // Initialize DB and Check Session on Mount
+  // Initialize and Check Session on Mount
   useEffect(() => {
     const startApp = async () => {
       try {
-        setLoadingMsg('Starting SQLite Engine...');
-        // Initialize SQLite (Downloads WASM, Creates DB tables)
-        await initDatabase();
-        setLoadingMsg('Loading Session...');
+        setLoadingMsg('Verifying Session...');
         
         // Check URL Pathname for Slugs
         const path = window.location.pathname;
-        
-        // Regex matchers for clean routing
         const setupMatch = path.match(/\/setup\/([^/]+)/);
         const resetMatch = path.match(/\/reset\/([^/]+)/);
         const joinMatch = path.match(/\/join\/([^/]+)/);
@@ -62,24 +57,22 @@ function App() {
         // Handle Join Link -> /join/:meetingId
         if (joinMatch && joinMatch[1]) {
           const joinId = joinMatch[1];
-          // Find meeting details
-          const meetings = storageService.getMeetings();
+          // We need to fetch meetings async now
+          const meetings = await storageService.getMeetings();
           const meeting = meetings.find(m => m.id === joinId);
           
           if (meeting) {
             if (sessionUser) {
-              // If logged in, prompt to join immediately
               setPendingMeetingDetails(meeting);
             } else {
-              // If not logged in, store ID to prompt after login
               setPendingJoinId(joinId);
             }
           }
         }
 
         if (sessionUser) {
-          // Verify user still exists in DB (in case of DB clear)
-          const dbUser = storageService.getUserById(sessionUser.id);
+          // Verify user still exists in Cloud DB
+          const dbUser = await storageService.getUserById(sessionUser.id);
           if (dbUser) {
              setUser(dbUser);
              setView('DASHBOARD');
@@ -91,25 +84,26 @@ function App() {
         setLoading(false);
       } catch (error) {
         console.error("Initialization Failed:", error);
-        setLoadingMsg('Error: Failed to load database.');
+        setLoadingMsg('Connection Error. Check Console.');
+        // Allow loading to finish so UI doesn't hang
+        setLoading(false);
       }
     };
 
     startApp();
   }, []);
 
-  const handleLogin = (userData: User) => {
+  const handleLogin = async (userData: User) => {
     setUser(userData);
     setView('DASHBOARD');
 
-    // Check if there was a pending join request
     if (pendingJoinId) {
-      const meetings = storageService.getMeetings();
+      const meetings = await storageService.getMeetings();
       const meeting = meetings.find(m => m.id === pendingJoinId);
       if (meeting) {
         setPendingMeetingDetails(meeting);
       }
-      setPendingJoinId(null); // Clear pending ID
+      setPendingJoinId(null);
     }
   };
 
@@ -118,7 +112,6 @@ function App() {
     setUser(null);
     setView('LOGIN');
     setPendingMeetingDetails(null);
-    // Reset URL to root
     window.history.pushState({}, document.title, '/');
   };
 
@@ -131,15 +124,12 @@ function App() {
   const handleEndCall = () => {
     setCurrentMeetingId(null);
     setView('DASHBOARD');
-    // Ensure URL is clean after call
     window.history.pushState({}, document.title, '/');
   };
 
   const handleConfirmJoin = () => {
     if (pendingMeetingDetails) {
-      // Clean URL to root so refreshing doesn't trigger join modal again immediately
       window.history.pushState({}, document.title, '/');
-      
       setCurrentMeetingId(pendingMeetingDetails.id);
       setPendingMeetingDetails(null);
       setView('MEETING');
@@ -147,13 +137,11 @@ function App() {
   };
 
   const handleCancelJoin = () => {
-    // Clean URL
     window.history.pushState({}, document.title, '/');
     setPendingMeetingDetails(null);
   };
 
   const handleSetupSuccess = (userData: User) => {
-    // Clean URL
     window.history.pushState({}, document.title, '/');
     setUser(userData);
     setView('DASHBOARD');
@@ -164,7 +152,7 @@ function App() {
     return (
       <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
         <div className="relative">
-           <div className="w-16 h-16 border-4 border-slate-800 border-t-blue-600 rounded-full animate-spin"></div>
+           <div className="w-16 h-16 border-4 border-slate-800 border-t-green-600 rounded-full animate-spin"></div>
            <div className="absolute inset-0 flex items-center justify-center">
              <Database className="w-6 h-6 text-slate-600" />
            </div>
@@ -176,7 +164,6 @@ function App() {
 
   // --- VIEW RENDER ---
 
-  // 1. Meeting Room
   if (view === 'MEETING') {
     return (
       <MeetingRoom 
@@ -187,7 +174,6 @@ function App() {
     );
   }
 
-  // 2. Set Password (Setup or Reset)
   if (view === 'SET_PASSWORD' && setupToken) {
     return (
       <SetPassword 
@@ -200,7 +186,6 @@ function App() {
 
   return (
     <>
-      {/* 3. Login or Dashboard */}
       {view === 'LOGIN' || !user ? (
         <Login onLogin={handleLogin} />
       ) : (
@@ -211,7 +196,7 @@ function App() {
         />
       )}
 
-      {/* 4. Global Join Confirmation Modal (Overlay) */}
+      {/* Global Join Confirmation Modal */}
       {pendingMeetingDetails && user && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">

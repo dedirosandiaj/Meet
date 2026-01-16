@@ -1,27 +1,34 @@
 import { User, Meeting, UserRole } from '../types';
-import { dbQuery, initSqlite } from './db';
+import { supabase } from './supabaseClient';
 
 const SESSION_KEY = 'zoomclone_session';
-
-// Initialize the Database (Called by App.tsx)
-export const initDatabase = async () => {
-  await initSqlite();
-};
 
 export const storageService = {
   // --- AUTHENTICATION & SESSION ---
   
-  login: (email: string, passwordAttempt: string): User | null => {
+  // NOTE: This now returns a Promise
+  login: async (email: string, passwordAttempt: string): Promise<User | null> => {
     try {
-      const user = dbQuery.get("SELECT * FROM users WHERE email = ? AND password = ?", [email, passwordAttempt]);
+      // Simple row lookup (Not using Supabase Auth for this demo to keep logic similar to previous version)
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .eq('password', passwordAttempt)
+        .single();
       
-      if (user && user.status === 'active') {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(user));
-        return user as User;
+      if (error || !data) {
+        console.error("Login Error:", error);
+        return null;
+      }
+
+      if (data.status === 'active') {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        return data as User;
       }
       return null;
     } catch (e) {
-      console.error("Login failed", e);
+      console.error("Login Exception", e);
       return null;
     }
   },
@@ -35,68 +42,99 @@ export const storageService = {
     return session ? JSON.parse(session) : null;
   },
 
-  // --- MEETINGS OPERATIONS (SQLITE) ---
+  // --- MEETINGS OPERATIONS (SUPABASE) ---
 
-  getMeetings: (): Meeting[] => {
-    try {
-      return dbQuery.select("SELECT * FROM meetings ORDER BY date, time") as Meeting[];
-    } catch (e) {
+  getMeetings: async (): Promise<Meeting[]> => {
+    const { data, error } = await supabase
+      .from('meetings')
+      .select('*')
+      .order('date', { ascending: true })
+      .order('time', { ascending: true });
+
+    if (error) {
+      console.error("Error fetching meetings:", error);
       return [];
     }
+    return (data as Meeting[]) || [];
   },
 
-  createMeeting: (meeting: Meeting) => {
-    dbQuery.run(
-      "INSERT INTO meetings (id, title, date, time, host, participantsCount, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [meeting.id, meeting.title, meeting.date, meeting.time, meeting.host, meeting.participantsCount, meeting.status]
-    );
+  createMeeting: async (meeting: Meeting): Promise<Meeting[]> => {
+    const { error } = await supabase
+      .from('meetings')
+      .insert([meeting]);
+
+    if (error) console.error("Error creating meeting:", error);
     return storageService.getMeetings();
   },
 
-  updateMeeting: (updatedMeeting: Meeting) => {
-    dbQuery.run(
-      "UPDATE meetings SET title=?, date=?, time=? WHERE id=?",
-      [updatedMeeting.title, updatedMeeting.date, updatedMeeting.time, updatedMeeting.id]
-    );
+  updateMeeting: async (updatedMeeting: Meeting): Promise<Meeting[]> => {
+    const { error } = await supabase
+      .from('meetings')
+      .update({
+        title: updatedMeeting.title,
+        date: updatedMeeting.date,
+        time: updatedMeeting.time
+      })
+      .eq('id', updatedMeeting.id);
+
+    if (error) console.error("Error updating meeting:", error);
     return storageService.getMeetings();
   },
 
-  deleteMeeting: (id: string) => {
-    dbQuery.run("DELETE FROM meetings WHERE id=?", [id]);
+  deleteMeeting: async (id: string): Promise<Meeting[]> => {
+    const { error } = await supabase
+      .from('meetings')
+      .delete()
+      .eq('id', id);
+
+    if (error) console.error("Error deleting meeting:", error);
     return storageService.getMeetings();
   },
 
-  // --- USERS OPERATIONS (SQLITE) ---
+  // --- USERS OPERATIONS (SUPABASE) ---
 
-  getUsers: (): User[] => {
-    try {
-      return dbQuery.select("SELECT * FROM users") as User[];
-    } catch (e) {
-      return [];
-    }
+  getUsers: async (): Promise<User[]> => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*');
+    
+    if (error) return [];
+    return (data as User[]) || [];
   },
 
-  getUserById: (id: string): User | undefined => {
-    const u = dbQuery.get("SELECT * FROM users WHERE id=?", [id]);
-    return u as User | undefined;
+  getUserById: async (id: string): Promise<User | undefined> => {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    return data || undefined;
   },
 
-  getUserByToken: (token: string): User | undefined => {
-    const u = dbQuery.get("SELECT * FROM users WHERE token=?", [token]);
-    return u as User | undefined;
+  getUserByToken: async (token: string): Promise<User | undefined> => {
+    const { data } = await supabase
+      .from('users')
+      .select('*')
+      .eq('token', token)
+      .single();
+    
+    return data || undefined;
   },
 
-  generateUserToken: (userId: string): string | null => {
+  generateUserToken: async (userId: string): Promise<string | null> => {
     const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    try {
-      dbQuery.run("UPDATE users SET token=? WHERE id=?", [newToken, userId]);
-      return newToken;
-    } catch (e) {
-      return null;
-    }
+    
+    const { error } = await supabase
+      .from('users')
+      .update({ token: newToken })
+      .eq('id', userId);
+
+    if (error) return null;
+    return newToken;
   },
 
-  addUser: (name: string, email: string, role: UserRole): User => {
+  addUser: async (name: string, email: string, role: UserRole): Promise<User | null> => {
     const newUser: User = {
       id: Date.now().toString(),
       name,
@@ -108,29 +146,36 @@ export const storageService = {
       token: Math.random().toString(36).substring(2, 15)
     };
 
-    dbQuery.run(
-      "INSERT INTO users (id, name, email, role, avatar, status, password, token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [newUser.id, newUser.name, newUser.email, newUser.role, newUser.avatar, newUser.status, newUser.password, newUser.token]
-    );
+    const { error } = await supabase
+      .from('users')
+      .insert([newUser]);
 
+    if (error) {
+      console.error("Error adding user:", error);
+      return null;
+    }
     return newUser;
   },
 
-  setUserPassword: (id: string, newPassword: string): User | null => {
-    try {
-      dbQuery.run(
-        "UPDATE users SET password=?, status='active', token=NULL WHERE id=?",
-        [newPassword, id]
-      );
-      
-      const updatedUser = storageService.getUserById(id);
-      if (updatedUser) {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
-        return updatedUser;
-      }
-      return null;
-    } catch (e) {
-      return null;
+  setUserPassword: async (id: string, newPassword: string): Promise<User | null> => {
+    // 1. Update password
+    const { error } = await supabase
+      .from('users')
+      .update({ 
+        password: newPassword, 
+        status: 'active', 
+        token: null 
+      })
+      .eq('id', id);
+
+    if (error) return null;
+
+    // 2. Fetch updated user
+    const updatedUser = await storageService.getUserById(id);
+    if (updatedUser) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));
+      return updatedUser;
     }
+    return null;
   }
 };

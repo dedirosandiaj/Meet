@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { storageService } from '../services/storage';
-import { Lock, Check, KeyRound, RotateCcw } from 'lucide-react';
+import { Lock, Check, KeyRound, RotateCcw, Loader2 } from 'lucide-react';
 
 interface SetPasswordProps {
   token: string;
@@ -13,11 +13,21 @@ const SetPassword: React.FC<SetPasswordProps> = ({ token, mode, onSuccess }) => 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | undefined>(undefined);
 
-  // Fetch user details by TOKEN
-  const user = storageService.getUserByToken(token);
+  // Fetch user details by TOKEN async
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      const fetchedUser = await storageService.getUserByToken(token);
+      setUser(fetchedUser);
+      setLoading(false);
+    };
+    fetchUser();
+  }, [token]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -36,16 +46,27 @@ const SetPassword: React.FC<SetPasswordProps> = ({ token, mode, onSuccess }) => 
       return;
     }
 
+    setLoading(true);
     // Set password using the user's ID found from the token
-    const updatedUser = storageService.setUserPassword(user.id, password);
+    const updatedUser = await storageService.setUserPassword(user.id, password);
+    setLoading(false);
+
     if (updatedUser) {
       onSuccess(updatedUser);
     } else {
-      setError('Failed to update password. User not found.');
+      setError('Failed to update password. Please try again.');
     }
   };
 
-  if (!user) {
+  if (loading && !user) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-950 text-white">
+        <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (!loading && !user) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-950 text-white">
         <div className="text-center p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl">
@@ -77,9 +98,9 @@ const SetPassword: React.FC<SetPasswordProps> = ({ token, mode, onSuccess }) => 
           </h1>
           <p className="text-slate-400 mt-2 text-center">
             {isReset ? (
-                <>Hi <span className="text-white font-medium">{user.name}</span>, please enter your new password below to secure your account.</>
+                <>Hi <span className="text-white font-medium">{user?.name}</span>, please enter your new password below to secure your account.</>
             ) : (
-                <>Hello <span className="text-white font-medium">{user.name}</span>.<br/>Set your password to activate your account.</>
+                <>Hello <span className="text-white font-medium">{user?.name}</span>.<br/>Set your password to activate your account.</>
             )}
           </p>
         </div>
@@ -127,12 +148,14 @@ const SetPassword: React.FC<SetPasswordProps> = ({ token, mode, onSuccess }) => 
 
           <button
             type="submit"
-            className={`w-full py-3 px-4 text-white font-medium rounded-lg shadow-lg transition-all transform hover:scale-[1.02] focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+            disabled={loading}
+            className={`w-full py-3 px-4 text-white font-medium rounded-lg shadow-lg transition-all transform hover:scale-[1.02] focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 flex items-center justify-center gap-2 ${
                 isReset 
                 ? 'bg-orange-600 hover:bg-orange-500 shadow-orange-500/20 focus:ring-orange-500' 
                 : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20 focus:ring-emerald-500'
             }`}
           >
+            {loading && <Loader2 className="w-5 h-5 animate-spin" />}
             {isReset ? 'Update Password' : 'Activate Account'}
           </button>
         </form>

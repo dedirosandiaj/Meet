@@ -14,7 +14,8 @@ import {
   Clock,
   ArrowLeft,
   Hourglass,
-  Calendar
+  Calendar,
+  MonitorUp
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -33,10 +34,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // Streams
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   
   // States
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
   
   // UI States
@@ -49,8 +52,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // --- LOGIC: Check Meeting Status ---
   useEffect(() => {
-    const checkMeetingStatus = () => {
-      const meetings = storageService.getMeetings();
+    const checkMeetingStatus = async () => {
+      const meetings = await storageService.getMeetings();
       const found = meetings.find(m => m.id === meetingId);
       
       if (found) {
@@ -95,7 +98,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         }
       } else {
         // Meeting not found? 
-        // For demo purposes, if ID not found, just show waiting or assume deleted
       }
       setLoading(false);
     };
@@ -121,7 +123,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setWebcamStream(stream);
-      if (localVideoRef.current) {
+      if (localVideoRef.current && !isScreenSharing) {
         localVideoRef.current.srcObject = stream;
       }
       setPermissionError(false);
@@ -136,6 +138,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => {
       if (webcamStream) {
         webcamStream.getTracks().forEach(track => track.stop());
+      }
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(track => track.stop());
       }
     };
   }, [webcamStream]);
@@ -154,6 +159,47 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       webcamStream.getVideoTracks().forEach(track => track.enabled = !track.enabled);
       setIsVideoOff(!isVideoOff);
     }
+  };
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      // Stop sharing
+      stopScreenShare();
+    } else {
+      // Start sharing
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        screenStreamRef.current = stream;
+        
+        // Replace video src
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
+        // Listen for browser "Stop Sharing" floating button click
+        stream.getVideoTracks()[0].onended = () => {
+          stopScreenShare();
+        };
+
+        setIsScreenSharing(true);
+      } catch (err) {
+        console.error("Error starting screen share:", err);
+      }
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
+
+    // Revert to webcam
+    if (localVideoRef.current && webcamStream) {
+      localVideoRef.current.srcObject = webcamStream;
+    }
+
+    setIsScreenSharing(false);
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -244,15 +290,15 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         {/* Header (Floating) */}
         <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
-          <div className="bg-slate-900/80 backdrop-blur-md p-3 rounded-xl border border-slate-800 pointer-events-auto shadow-lg">
+          <div className="bg-slate-900/80 backdrop-blur-md p-2 md:p-3 rounded-xl border border-slate-800 pointer-events-auto shadow-lg max-w-[60%] md:max-w-none">
              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center">
-                  <Video className="w-5 h-5 text-blue-500" />
+                <div className="w-8 h-8 md:w-10 md:h-10 bg-slate-800 rounded-lg flex items-center justify-center shrink-0">
+                  <Video className="w-4 h-4 md:w-5 md:h-5 text-blue-500" />
                 </div>
-                <div>
-                  <h1 className="font-bold text-white text-sm leading-tight">{meeting?.title || 'Meeting Room'}</h1>
-                  <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                <div className="overflow-hidden">
+                  <h1 className="font-bold text-white text-xs md:text-sm leading-tight truncate">{meeting?.title || 'Meeting Room'}</h1>
+                  <p className="text-[10px] md:text-xs text-slate-400 flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
                     {formatTime()} • ID: {meetingId}
                   </p>
                 </div>
@@ -268,10 +314,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         </div>
 
         {/* Video Grid */}
-        <div className="flex-1 p-4 pt-24 pb-24 overflow-y-auto">
+        <div className="flex-1 p-4 pt-24 pb-28 md:pb-24 overflow-y-auto">
            {permissionError && (
              <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-950/90">
-                <div className="text-center">
+                <div className="text-center p-4">
                   <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500">
                     <VideoOff className="w-8 h-8" />
                   </div>
@@ -281,7 +327,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
              </div>
            )}
 
-           <div className={`grid gap-4 h-full content-center ${activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-2 md:grid-cols-3'}`}>
+           <div className={`grid gap-4 h-full content-center ${activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
               
               {/* Local User */}
               <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group ring-2 ring-blue-500/50">
@@ -290,9 +336,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                    autoPlay 
                    muted 
                    playsInline 
-                   className={`w-full h-full object-cover transform scale-x-[-1] ${isVideoOff ? 'hidden' : 'block'}`}
+                   // Mirror effect only for webcam, not screen share
+                   className={`w-full h-full object-cover ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`}
                  />
-                 {isVideoOff && (
+                 {isVideoOff && !isScreenSharing && (
                    <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
                       <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl">
                         {user.name.charAt(0)}
@@ -302,10 +349,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                  <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium flex items-center gap-2">
                    {user.name} (You)
                    {isMuted && <MicOff className="w-3 h-3 text-red-500" />}
+                   {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400" />}
                  </div>
               </div>
 
-              {/* Mock Participants - REMOVED, but structure kept if state updates in future */}
+              {/* Mock Participants */}
               {activeParticipants.map((p) => (
                  <div key={p.id} className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
                     <img src={p.avatar} alt={p.name} className="w-full h-full object-cover opacity-80" />
@@ -318,11 +366,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         </div>
 
         {/* Bottom Control Bar */}
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20">
-          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20 w-[95%] max-w-fit">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 md:px-6 md:py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-2 md:gap-3">
              <button 
                onClick={toggleMute}
-               className={`p-3.5 rounded-xl transition-all ${isMuted ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+               className={`p-3 md:p-3.5 rounded-xl transition-all ${isMuted ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
                title={isMuted ? "Unmute" : "Mute"}
              >
                 {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -330,17 +378,25 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
              
              <button 
                onClick={toggleVideo}
-               className={`p-3.5 rounded-xl transition-all ${isVideoOff ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+               className={`p-3 md:p-3.5 rounded-xl transition-all ${isVideoOff ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
                title={isVideoOff ? "Turn Video On" : "Turn Video Off"}
              >
                 {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
              </button>
 
-             <div className="w-px h-8 bg-slate-700 mx-1"></div>
+             <button 
+               onClick={toggleScreenShare}
+               className={`p-3 md:p-3.5 rounded-xl transition-all hidden sm:block ${isScreenSharing ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+               title={isScreenSharing ? "Stop Sharing" : "Share Screen"}
+             >
+                <MonitorUp className="w-5 h-5" />
+             </button>
+
+             <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>
 
              <button 
                onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')}
-               className={`p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+               className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
              >
                 <Users className="w-5 h-5" />
                 <span className="absolute -top-1 -right-1 bg-slate-700 text-xs w-4 h-4 rounded-full flex items-center justify-center border border-slate-900">
@@ -350,7 +406,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
              <button 
                onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')}
-               className={`p-3.5 rounded-xl transition-all ${showSidebar === 'chat' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
+               className={`p-3 md:p-3.5 rounded-xl transition-all ${showSidebar === 'chat' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
              >
                 <MessageSquare className="w-5 h-5" />
              </button>
@@ -359,18 +415,18 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
              <button 
                onClick={onEndCall}
-               className="px-6 py-3.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20"
+               className="px-4 py-3 md:px-6 md:py-3.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20 whitespace-nowrap text-sm md:text-base"
              >
-                End Call
+                End
              </button>
           </div>
         </div>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar (Responsive Overlay) */}
       {showSidebar && (
-        <div className="w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full animate-[slideLeft_0.2s_ease-out]">
-           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="fixed inset-y-0 right-0 z-30 w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full animate-[slideLeft_0.2s_ease-out]">
+           <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
               <h2 className="font-semibold text-white">
                 {showSidebar === 'chat' ? 'In-Call Messages' : 'Participants'}
               </h2>
@@ -382,7 +438,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            {/* Chat View */}
            {showSidebar === 'chat' && (
              <>
-               <div className="flex-1 overflow-y-auto p-4 space-y-4">
+               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900">
                  {chatMessages.map((msg) => (
                     <div key={msg.id} className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'}`}>
                        <div className="flex items-center gap-2 mb-1">
@@ -395,7 +451,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                     </div>
                  ))}
                </div>
-               <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800">
+               <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900 pb-8 md:pb-4">
                  <div className="relative">
                     <input 
                       type="text" 
@@ -414,7 +470,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
            {/* Participants View */}
            {showSidebar === 'participants' && (
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto bg-slate-900">
                  <div className="p-2">
                     {/* Self */}
                     <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg cursor-pointer">

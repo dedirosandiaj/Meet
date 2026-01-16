@@ -7,9 +7,7 @@ const SETTINGS_KEY = 'zoomclone_settings';
 
 const DEFAULT_SETTINGS: AppSettings = {
   title: 'ZoomClone AI',
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png', // Default generic video icon
-  googleDriveClientId: '',
-  googleDriveApiKey: ''
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png'
 };
 
 export const storageService = {
@@ -64,8 +62,8 @@ export const storageService = {
         const settings: AppSettings = { 
             title: data.title, 
             iconUrl: data.icon_url,
-            googleDriveClientId: data.google_drive_client_id || '',
-            googleDriveApiKey: data.google_drive_api_key || ''
+            googleDriveClientId: data.google_drive_client_id,
+            googleDriveApiKey: data.google_drive_api_key
         };
         // Cache to local storage
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -88,7 +86,6 @@ export const storageService = {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 
     // 2. Upsert to Supabase
-    // Note: Ensure your Supabase table 'app_settings' has columns: google_drive_client_id (text), google_drive_api_key (text)
     const { error } = await supabase
       .from('app_settings')
       .upsert({ 
@@ -101,10 +98,8 @@ export const storageService = {
 
     if (error) {
         console.error("Error saving settings to DB:", error);
-        // We don't block the UI update even if DB fails, relying on LocalStorage for the session
     }
     
-    // Return the settings object passed in so the UI updates optimistically
     return settings;
   },
 
@@ -218,7 +213,6 @@ export const storageService = {
         }
       )
       // 2. Listen for WebRTC Signals (Video/Audio Handshake & Control Signals)
-      // Supports: 'signal' (WebRTC), 'chat', 'screen-toggle', 'leave', 'force-end'
       .on('broadcast', { event: 'signal' }, (payload) => {
         onSignal(payload.payload);
       })

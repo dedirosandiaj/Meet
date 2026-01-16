@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { User, ChatMessage, Meeting, Participant, UserRole } from '../types';
 import { MOCK_CHAT, formatTime } from '../services/mock';
 import { storageService } from '../services/storage';
-import { googleDriveService } from '../services/googleDrive';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { 
   Mic, 
@@ -24,8 +23,6 @@ import {
   Scaling,
   Pin,
   PinOff,
-  CircleDot,
-  HardDrive,
   AlertTriangle
 } from 'lucide-react';
 
@@ -349,22 +346,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
 
-  // RECORDING STATES
-  const [isRecording, setIsRecording] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
-
   // --- INITIALIZATION ---
   
-  // 1. PRE-LOAD GOOGLE DRIVE CLIENT
-  useEffect(() => {
-    // We initialize this in the background so it's ready when user clicks "Leave"
-    // This reduces latency and prevents popup blocker issues.
-    googleDriveService.initClient().catch(err => console.warn("Background GAPI Init warn:", err));
-  }, []);
-
-  // 2. LOAD MEETING DATA
+  // 1. LOAD MEETING DATA
   useEffect(() => {
     const initMeeting = async () => {
       const meetings = await storageService.getMeetings();
@@ -641,47 +625,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
-  // --- RECORDING ACTIONS ---
-
-  const handleStartRecording = async () => {
-    if (isRecording) {
-      // STOP recording
-      mediaRecorderRef.current?.stop();
-      setIsRecording(false);
-      return;
-    }
-
-    try {
-      // For a "Client-side only" app, recording everyone usually means recording the Screen/Tab of the host.
-      // We ask permission to capture the tab.
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'browser' },
-        audio: true
-      });
-
-      const recorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      recordedChunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-            recordedChunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        // Stream tracks stop automatically when recorder stops usually, but let's be safe
-        stream.getTracks().forEach(t => t.stop());
-      };
-
-      recorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Failed to start recording:", err);
-      alert("Recording failed. Please allow screen capture permission.");
-    }
-  };
-
   const handlePin = (id: string) => {
       if (pinnedUserId === id) {
           setPinnedUserId(null); // Unpin
@@ -695,7 +638,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     isCleaningUp.current = true;
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     screenStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaRecorderRef.current?.stop(); // Ensure recorder stops
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
     channelRef.current?.unsubscribe();
@@ -706,57 +648,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     setIsLeaving(true);
 
     const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
-
-    // IF RECORDING WAS ACTIVE, STOP IT AND SAVE TO DRIVE
-    if (isRecording && mediaRecorderRef.current && recordedChunksRef.current) {
-        
-        // --- 1. PREPARE AUTH IMMEDIATELY ---
-        // We trigger the sign-in popup NOW, before waiting for the recorder to stop.
-        // This keeps the action synchronous with the user's click.
-        try {
-            await googleDriveService.signIn();
-        } catch (e) {
-            console.warn("Auth popup failed/skipped:", e);
-        }
-
-        // --- 2. STOP RECORDER (Async) ---
-        await new Promise<void>(resolve => {
-            if (mediaRecorderRef.current?.state !== 'inactive') {
-                mediaRecorderRef.current!.onstop = () => resolve();
-                mediaRecorderRef.current!.stop();
-            } else {
-                resolve();
-            }
-        });
-
-        setIsUploading(true);
-        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-        const filename = `Meeting-Recording-${meetingId}-${Date.now()}.webm`;
-        
-        // --- 3. UPLOAD ---
-        try {
-            // Note: uploadVideo calls signIn again internally to get the token,
-            // but since we already signed in above, it shouldn't trigger a popup block.
-            const link = await googleDriveService.uploadVideo(blob, filename);
-            console.log("Uploaded/Saved to: ", link);
-        } catch (e: any) {
-            console.error("Upload failed", e);
-            let errMsg = "Failed to upload to Drive. Saving locally instead.";
-            if (e.message?.includes("User not signed in")) errMsg = "Not signed in to Google. Saving locally.";
-            if (e.message?.includes("popup")) errMsg = "Popup blocked. Saving locally.";
-            alert(errMsg);
-            
-            // Allow download locally as backup
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-        } finally {
-            setIsUploading(false);
-        }
-    }
 
     if (channelRef.current) {
         if (isHost) {
@@ -771,20 +662,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   // --- RENDER ---
-  if (isUploading) return (
-      <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center text-white gap-6">
-          <div className="relative">
-             <div className="w-20 h-20 border-4 border-slate-800 border-t-green-500 rounded-full animate-spin"></div>
-             <div className="absolute inset-0 flex items-center justify-center">
-                 <HardDrive className="w-8 h-8 text-green-500" />
-             </div>
-          </div>
-          <div className="text-center">
-             <h2 className="text-2xl font-bold mb-2">Saving Recording...</h2>
-             <p className="text-slate-400">Uploading to Google Drive...</p>
-          </div>
-      </div>
-  );
 
   if (isLeaving) return <div className="h-[100dvh] w-full bg-slate-950 flex items-center justify-center"></div>;
   if (loading) return (
@@ -849,14 +726,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                   <p className="text-[10px] md:text-xs text-slate-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>{formatTime()} <span className="hidden sm:inline">• ID: {meetingId}</span></p>
                 </div>
              </div>
-          </div>
-          <div className="flex gap-2 pointer-events-auto">
-             {isRecording && (
-                 <div className="bg-red-500/20 backdrop-blur-md px-3 py-1.5 rounded-lg border border-red-500/50 flex items-center gap-2">
-                     <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></div>
-                     <span className="text-[10px] md:text-xs font-bold text-red-100">REC</span>
-                 </div>
-             )}
           </div>
         </div>
 
@@ -932,13 +801,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                 <button onClick={toggleScreenShare} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 hidden sm:block ${isScreenSharing ? 'bg-green-600 text-white shadow-lg shadow-green-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     <MonitorUp className="w-5 h-5" />
                 </button>
-
-                {/* RECORDING BUTTON (Host Only) */}
-                {isHost && (
-                    <button onClick={handleStartRecording} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isRecording ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`} title="Record Meeting">
-                        <CircleDot className={`w-5 h-5 ${isRecording ? 'animate-pulse' : ''}`} />
-                    </button>
-                )}
 
                 <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>
 

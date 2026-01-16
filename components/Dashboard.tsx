@@ -28,8 +28,7 @@ import {
   Globe,
   Image as ImageIcon,
   Upload,
-  RefreshCw,
-  HardDrive
+  RefreshCw
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -114,9 +113,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Settings Form State
   const [settingsForm, setSettingsForm] = useState({
       title: appSettings.title,
-      iconUrl: appSettings.iconUrl,
-      googleDriveClientId: appSettings.googleDriveClientId || '',
-      googleDriveApiKey: appSettings.googleDriveApiKey || ''
+      iconUrl: appSettings.iconUrl
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
@@ -179,9 +176,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   useEffect(() => {
     setSettingsForm({
         title: appSettings.title,
-        iconUrl: appSettings.iconUrl,
-        googleDriveClientId: appSettings.googleDriveClientId || '',
-        googleDriveApiKey: appSettings.googleDriveApiKey || ''
+        iconUrl: appSettings.iconUrl
     });
   }, [appSettings]);
 
@@ -200,10 +195,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
 
     try {
         const newSettings = await storageService.updateAppSettings({
+            ...appSettings, // Preserve existing settings like keys
             title: settingsForm.title,
-            iconUrl: settingsForm.iconUrl,
-            googleDriveClientId: settingsForm.googleDriveClientId,
-            googleDriveApiKey: settingsForm.googleDriveApiKey
+            iconUrl: settingsForm.iconUrl
         });
         onUpdateSettings(newSettings);
         setSettingsSavedSuccess(true);
@@ -817,7 +811,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             <div className="max-w-3xl mx-auto animate-[fadeIn_0.2s_ease-out]">
                 <div className="mb-8">
                     <h1 className="text-2xl font-bold text-white mb-1">Application Settings</h1>
-                    <p className="text-slate-400 text-sm md:text-base">Customize the workspace branding and integrations</p>
+                    <p className="text-slate-400 text-sm md:text-base">Customize the workspace branding</p>
                 </div>
 
                 <form onSubmit={handleSaveSettings} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
@@ -910,39 +904,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                                              <span className="text-[10px] text-white font-medium">Change</span>
                                          </div>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-slate-800" />
-                        
-                        {/* Google Drive Integration Section */}
-                        <div className="space-y-4">
-                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                                <HardDrive className="w-4 h-4" /> Google Drive Integration
-                            </label>
-                            
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">Client ID</label>
-                                    <input 
-                                        type="text" 
-                                        value={settingsForm.googleDriveClientId}
-                                        onChange={(e) => setSettingsForm({...settingsForm, googleDriveClientId: e.target.value})}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all font-mono text-sm"
-                                        placeholder="YOUR_CLIENT_ID.apps.googleusercontent.com"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs text-slate-500 font-semibold uppercase">API Key</label>
-                                    <input 
-                                        type="text" 
-                                        value={settingsForm.googleDriveApiKey}
-                                        onChange={(e) => setSettingsForm({...settingsForm, googleDriveApiKey: e.target.value})}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all font-mono text-sm"
-                                        placeholder="AIzaSy..."
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">Required for saving recording files to Google Drive automatically.</p>
                                 </div>
                             </div>
                         </div>

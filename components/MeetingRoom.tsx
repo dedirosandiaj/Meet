@@ -505,6 +505,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         if (!shouldWait) {
           startWebcam();
+        } else {
+          // --- FIX: Stop loading to show Countdown View ---
+          setLoading(false);
         }
       } else {
         setLoading(false);
@@ -799,6 +802,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const handleCountdownComplete = () => {
+    // Show loading spinner briefly while accessing camera
+    setLoading(true);
     setIsWaiting(false);
     startWebcam();
   };

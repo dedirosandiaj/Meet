@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, Meeting, AppSettings } from '../types';
 import { storageService } from '../services/storage';
+import { emailService } from '../services/email';
 import { 
   Calendar, 
   Video, 
@@ -29,7 +30,8 @@ import {
   Image as ImageIcon,
   Upload,
   RefreshCw,
-  Search
+  Search,
+  Send
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -368,11 +370,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
   };
 
-  const handleCopyInviteLink = async (targetUser: User) => {
-    let token = targetUser.token;
-    if (!token) {
+  // --- TOKEN GENERATOR HELPER ---
+  const ensureUserToken = async (targetUser: User): Promise<string> => {
+      let token = targetUser.token;
+      if (!token) {
         token = await storageService.generateUserToken(targetUser.id) || '';
-    }
+      }
+      return token;
+  };
+
+  const handleCopyInviteLink = async (targetUser: User) => {
+    const token = await ensureUserToken(targetUser);
     if (!token) return;
 
     const baseUrl = window.location.origin;
@@ -382,6 +390,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     navigator.clipboard.writeText(message);
     setInviteCopiedId(targetUser.id);
     setTimeout(() => setInviteCopiedId(null), 2000);
+  };
+
+  const handleSendInviteEmail = async (targetUser: User) => {
+    const token = await ensureUserToken(targetUser);
+    if (!token) return;
+
+    const baseUrl = window.location.origin;
+    const inviteUrl = `${baseUrl}/setup/${token}`;
+    
+    emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
   };
 
   const handleCopyResetLink = async (targetUser: User) => {
@@ -396,7 +414,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     setInviteCopiedId(targetUser.id);
     setTimeout(() => setInviteCopiedId(null), 2000);
     
-    // Refresh list locally
+    const updatedUsers = await storageService.getUsers();
+    setAllUsers(updatedUsers);
+  };
+
+  const handleSendResetEmail = async (targetUser: User) => {
+    const newToken = await storageService.generateUserToken(targetUser.id);
+    if (!newToken) return;
+
+    const baseUrl = window.location.origin;
+    const resetUrl = `${baseUrl}/reset/${newToken}`;
+    
+    emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
+    
+    // Refresh to show updated token state if needed
     const updatedUsers = await storageService.getUsers();
     setAllUsers(updatedUsers);
   };
@@ -860,10 +891,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                          {u.status === 'active' ? (
                            <div className="flex items-center gap-1 mr-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span></div>
                          ) : (
-                           <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 px-2 py-1 rounded-lg transition-all mr-2 ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<><Check className="w-3 h-3" /></>) : (<>Invite <LinkIcon className="w-3 h-3" /></>)}</button>
+                           <div className="flex items-center gap-1 mr-2">
+                             <button onClick={() => handleSendInviteEmail(u)} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all" title="Send Invitation Email"><Mail className="w-3 h-3" /></button>
+                             <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 px-2 py-1.5 rounded-lg transition-all ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<><Check className="w-3 h-3" /></>) : (<>Copy Link <LinkIcon className="w-3 h-3" /></>)}</button>
+                           </div>
                          )}
                          <div className="flex gap-1">
-                             {u.status === 'active' && <button onClick={() => handleCopyResetLink(u)} className={`p-1.5 rounded-lg transition-all border border-transparent ${inviteCopiedId === u.id ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-700 hover:text-orange-400 hover:border-slate-600'}`} title="Reset Password Link">{inviteCopiedId === u.id ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}</button>}
+                             {u.status === 'active' && (
+                                <>
+                                  <button onClick={() => handleSendResetEmail(u)} className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700" title="Send Reset Email"><Mail className="w-4 h-4" /></button>
+                                  <button onClick={() => handleCopyResetLink(u)} className={`p-1.5 rounded-lg transition-all border border-transparent ${inviteCopiedId === u.id ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-700 hover:text-orange-400 hover:border-slate-600'}`} title="Copy Reset Link">{inviteCopiedId === u.id ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}</button>
+                                </>
+                             )}
                              <button onClick={() => handleEditUserClick(u)} className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Pencil className="w-4 h-4" /></button>
                              {u.id !== user.id && <button onClick={() => handleDeleteUserClick(u)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Trash2 className="w-4 h-4" /></button>}
                          </div>

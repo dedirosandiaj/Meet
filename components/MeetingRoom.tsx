@@ -14,7 +14,11 @@ import {
   X,
   MonitorUp,
   PhoneOff,
-  Activity
+  Activity,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RefreshCcw
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -79,8 +83,6 @@ const useAudioLevel = (stream: MediaStream | null | undefined) => {
         const avg = sum / dataArray.length;
         
         // Boost sensitivity and cap at 100
-        // avg usually ranges 0-255, but speech is often low. 
-        // Multiply by 2 or 3 to make it visible.
         const normalized = Math.min(100, Math.max(0, avg * 2));
         
         setLevel(prev => {
@@ -108,8 +110,6 @@ const useAudioLevel = (stream: MediaStream | null | undefined) => {
 
 // --- HELPER COMPONENT: AUDIO BAR ---
 const AudioIndicator = ({ level }: { level: number }) => {
-    // Determine heights dynamically based on level (0-100)
-    // Map 0-100 to 4px-24px roughly
     const baseH = 4;
     const h1 = Math.max(baseH, level * 0.15); 
     const h2 = Math.max(baseH, level * 0.3);  
@@ -127,6 +127,104 @@ const AudioIndicator = ({ level }: { level: number }) => {
     );
 };
 
+// --- HELPER COMPONENT: ZOOMABLE VIEW (NEW) ---
+const ZoomableView = ({ children, isActive }: { children: React.ReactNode, isActive: boolean }) => {
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  if (!isActive) return <>{children}</>;
+
+  const handleZoom = (delta: number) => {
+    setScale(prev => {
+      const newScale = Math.min(Math.max(1, prev + delta), 4); // Max 4x zoom
+      if (newScale === 1) setPosition({ x: 0, y: 0 }); // Reset pos if zoomed out
+      return newScale;
+    });
+  };
+
+  const handleReset = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  // Mouse Wheel Zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.stopPropagation(); // Prevent page scroll
+    if (e.deltaY < 0) handleZoom(0.1);
+    else handleZoom(-0.1);
+  };
+
+  // Dragging Logic
+  const onMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+    if (scale === 1) return;
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    dragStartRef.current = { x: clientX - position.x, y: clientY - position.y };
+  };
+
+  const onMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    
+    setPosition({
+      x: clientX - dragStartRef.current.x,
+      y: clientY - dragStartRef.current.y
+    });
+  };
+
+  const onMouseUp = () => setIsDragging(false);
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative w-full h-full overflow-hidden bg-slate-900 group"
+      onWheel={handleWheel}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onTouchStart={onMouseDown}
+      onTouchMove={onMouseMove}
+      onTouchEnd={onMouseUp}
+    >
+      <div 
+        style={{ 
+          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+          transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+          cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
+        }}
+        className="w-full h-full flex items-center justify-center"
+      >
+        {children}
+      </div>
+
+      {/* Zoom Controls Overlay */}
+      <div className="absolute top-4 right-4 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+        <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-blue-600 shadow-lg border border-slate-700">
+           <ZoomIn className="w-4 h-4" />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); handleZoom(-0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700">
+           <ZoomOut className="w-4 h-4" />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700">
+           <RefreshCcw className="w-4 h-4" />
+        </button>
+      </div>
+      
+      {scale > 1 && (
+         <div className="absolute bottom-4 right-4 px-2 py-1 bg-black/50 text-white text-xs rounded pointer-events-none">
+            {Math.round(scale * 100)}%
+         </div>
+      )}
+    </div>
+  );
+};
+
 // --- HELPER COMPONENT: LOCAL VIDEO ---
 const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -141,13 +239,15 @@ const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }
 
   return (
     <div className={`relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl group transition-all duration-300 ${audioLevel > 15 ? 'border-green-500/50 shadow-green-500/10' : 'border-slate-800'}`}>
-        <video 
-            ref={videoRef} 
-            autoPlay 
-            muted 
-            playsInline 
-            className={`w-full h-full object-cover transition-transform duration-300 ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`} 
-        />
+        <ZoomableView isActive={isScreenSharing}>
+          <video 
+              ref={videoRef} 
+              autoPlay 
+              muted 
+              playsInline 
+              className={`w-full h-full transition-transform duration-300 ${!isScreenSharing ? 'object-cover transform scale-x-[-1]' : 'object-contain'} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`} 
+          />
+        </ZoomableView>
         
         {isVideoOff && !isScreenSharing && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
@@ -163,7 +263,7 @@ const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }
             </div>
         )}
 
-        <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium flex items-center gap-2 z-10 max-w-[85%]">
+        <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium flex items-center gap-2 z-10 max-w-[85%] pointer-events-none">
             <span className="truncate">{user.name} (You)</span>
             {isMuted ? <MicOff className="w-3 h-3 text-red-500 shrink-0" /> : <AudioIndicator level={audioLevel} />}
             {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}
@@ -186,12 +286,14 @@ const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: M
   return (
      <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${audioLevel > 15 ? 'border-green-500/50' : 'border-slate-800'}`}>
        {stream ? (
-          <video 
-              ref={videoRef} 
-              autoPlay 
-              playsInline 
-              className={`w-full h-full bg-slate-900 ${isScreenSharing ? 'object-contain' : 'object-cover'}`}
-          />
+          <ZoomableView isActive={isScreenSharing}>
+            <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                className={`w-full h-full bg-slate-900 ${isScreenSharing ? 'object-contain' : 'object-cover'}`}
+            />
+          </ZoomableView>
        ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
               <div className="flex flex-col items-center gap-2">
@@ -210,7 +312,7 @@ const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: M
            </div>
        )}
 
-       <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium z-10 flex items-center gap-2 max-w-[85%]">
+       <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium z-10 flex items-center gap-2 max-w-[85%] pointer-events-none">
           <span className="truncate">{participant.name}</span>
           <AudioIndicator level={audioLevel} />
           {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}

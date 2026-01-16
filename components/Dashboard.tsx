@@ -344,7 +344,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
   };
 
   return (
-    <div className="flex h-screen w-full bg-slate-950 overflow-hidden relative">
+    <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
       
       {/* DELETE CONFIRMATION MODAL */}
       {meetingToDelete && (
@@ -371,7 +371,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       {/* ADD USER MODAL */}
       {showAddUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
               <h3 className="text-white font-semibold">Add New User</h3>
               <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
@@ -389,7 +389,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       {/* MEETING CREATED SUCCESS MODAL */}
       {createdMeeting && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform scale-100 transition-all">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform scale-100 transition-all max-h-[90vh] overflow-y-auto">
             <div className="p-6 text-center border-b border-slate-800">
               <div className="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20"><Check className="w-6 h-6 text-green-500" /></div>
               <h3 className="text-xl font-bold text-white mb-1">Meeting Created!</h3>
@@ -397,7 +397,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
             </div>
             <div className="p-6 space-y-4">
               <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting Title</label><div className="text-white font-medium text-lg truncate">{createdMeeting.title}</div></div>
-              <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting ID</label><div className="flex items-center gap-2"><div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg py-3 px-4 text-slate-200 font-mono text-2xl tracking-widest text-center">{createdMeeting.id}</div><button onClick={(e) => handleCopyId(createdMeeting.id, e)} className={`p-3 rounded-lg transition-all border ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}>{copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}</button><button onClick={(e) => handleShareMeeting(createdMeeting, e)} className={`p-3 rounded-lg transition-all border ${sharedId === createdMeeting.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Share2 className="w-6 h-6" /></button></div></div>
+              <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting ID</label><div className="flex items-center gap-2"><div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg py-3 px-4 text-slate-200 font-mono text-xl md:text-2xl tracking-widest text-center">{createdMeeting.id}</div><button onClick={(e) => handleCopyId(createdMeeting.id, e)} className={`p-3 rounded-lg transition-all border ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}>{copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}</button><button onClick={(e) => handleShareMeeting(createdMeeting, e)} className={`p-3 rounded-lg transition-all border ${sharedId === createdMeeting.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Share2 className="w-6 h-6" /></button></div></div>
             </div>
             <div className="p-4 bg-slate-950/50 border-t border-slate-800 flex gap-3"><button onClick={() => handleCloseCreatedModal(false)} className="flex-1 py-2.5 text-slate-300 hover:bg-slate-800 rounded-xl font-medium transition-colors">Close</button><button onClick={() => handleCloseCreatedModal(true)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-600/20 transition-all active:scale-95">Join Now</button></div>
           </div>
@@ -407,7 +407,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       {/* JOIN MEETING MODAL */}
       {showJoinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Join Meeting</h3><button onClick={() => setShowJoinModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button></div>
             <form onSubmit={handleJoinSubmit} className="p-6 space-y-4"><div><label className="block text-sm text-slate-400 mb-1">Meeting ID</label><div className="relative"><LinkIcon className="absolute left-3 top-3 w-5 h-5 text-slate-500" /><input type="text" placeholder="Enter ID" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-600 outline-none uppercase" value={joinId} onChange={(e) => setJoinId(e.target.value.toUpperCase())} maxLength={5} autoFocus /></div></div><div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowJoinModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" disabled={!joinId.trim()} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg disabled:opacity-50">Join</button></div></form>
           </div>
@@ -415,10 +415,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       )}
 
       {/* SCHEDULE/EDIT MODALS - Same structure but async handlers */}
-      {/* ... keeping UI mostly same for brevity, handlers are updated above ... */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
              <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Schedule Meeting</h3><button onClick={() => setShowScheduleModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
              <form onSubmit={handleScheduleSubmit} className="p-6 space-y-4">
                 <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.title} onChange={e => setScheduleForm({...scheduleForm, title: e.target.value})} required/></div>
@@ -431,7 +430,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       
       {showEditModal && editingMeeting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
              <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Edit Meeting</h3><button onClick={() => setShowEditModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
              <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
                 <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} required/></div>
@@ -479,7 +478,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       </aside>
 
       {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 overflow-auto bg-slate-950 p-4 pt-20 md:p-8 md:pt-8">
+      <main className="flex-1 overflow-auto bg-slate-950 p-4 pt-20 md:p-8 md:pt-8 custom-scrollbar">
         {isLoading && (
           <div className="w-full h-full flex items-center justify-center">
              <div className="flex flex-col items-center gap-2">
@@ -517,25 +516,29 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
                            <span className="text-[10px] md:text-xs text-slate-400 font-bold uppercase mt-1">{formatDateDisplay(meeting.date).split(' ')[0]}</span>
                            <span className="text-base md:text-lg font-bold text-white leading-none">{getDateDay(meeting.date)}</span>
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                             <h3 className="text-base font-semibold text-white mb-1 group-hover:text-blue-400 transition-colors">{meeting.title}</h3>
-                             {status === 'waiting' && <span className="text-[10px] bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/20 font-medium flex items-center gap-1"><Hourglass className="w-3 h-3" /> Waiting</span>}
+                             <h3 className="text-base font-semibold text-white mb-1 group-hover:text-blue-400 transition-colors truncate">{meeting.title}</h3>
+                             {status === 'waiting' && <span className="text-[10px] bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/20 font-medium flex items-center gap-1 shrink-0"><Hourglass className="w-3 h-3" /> Waiting</span>}
                           </div>
                           <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-4 text-xs md:text-sm text-slate-400">
                             <span className="flex items-center gap-1.5"><Clock className="w-3 h-3 md:w-4 md:h-4" /> {meeting.time}</span>
-                            <span className="flex items-center gap-1.5"><Users className="w-3 h-3 md:w-4 md:h-4" /> Host: {meeting.host}</span>
+                            <span className="flex items-center gap-1.5 truncate"><Users className="w-3 h-3 md:w-4 md:h-4" /> Host: {meeting.host}</span>
                           </div>
                           <div className="text-xs text-slate-600 font-mono mt-1">ID: {meeting.id}</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 md:gap-3 self-end md:self-auto w-full md:w-auto">
+                      
+                      {/* Responsive Action Buttons - Stack on mobile, Row on Desktop */}
+                      <div className="flex flex-row md:items-center gap-2 md:gap-3 self-stretch md:self-auto w-full md:w-auto mt-2 md:mt-0">
                         <button onClick={() => onJoinMeeting(meeting.id)} className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium rounded-lg transition-colors border text-center ${status === 'waiting' ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-800 hover:bg-blue-600 text-white border-slate-700 hover:border-blue-500'}`}>Join</button>
-                        <button onClick={(e) => handleCopyId(meeting.id, e)} className="p-2 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-colors border border-transparent hover:border-slate-600" title="Copy ID"><Copy className="w-5 h-5" /></button>
-                        <button onClick={(e) => handleShareMeeting(meeting, e)} className={`p-2 rounded-lg transition-colors border border-transparent ${sharedId === meeting.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-white hover:bg-slate-700 hover:border-slate-600'}`} title="Share Meeting"><Share2 className="w-5 h-5" /></button>
-                        {canManage && (
-                          <><button onClick={(e) => handleEditClick(meeting, e)} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors hidden sm:block"><Pencil className="w-5 h-5" /></button><button onClick={(e) => handleDeleteClick(meeting, e)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors hidden sm:block"><Trash2 className="w-5 h-5" /></button></>
-                        )}
+                        <div className="flex gap-2">
+                           <button onClick={(e) => handleCopyId(meeting.id, e)} className="p-2 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-colors border border-slate-800 hover:border-slate-600 flex-1 md:flex-none justify-center flex" title="Copy ID"><Copy className="w-5 h-5" /></button>
+                           <button onClick={(e) => handleShareMeeting(meeting, e)} className={`p-2 rounded-lg transition-colors border ${sharedId === meeting.id ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-500 hover:text-white hover:bg-slate-700 border-slate-800 hover:border-slate-600'} flex-1 md:flex-none justify-center flex`} title="Share Meeting"><Share2 className="w-5 h-5" /></button>
+                           {canManage && (
+                             <><button onClick={(e) => handleEditClick(meeting, e)} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 border border-slate-800 rounded-lg transition-colors flex-1 md:flex-none justify-center flex"><Pencil className="w-5 h-5" /></button><button onClick={(e) => handleDeleteClick(meeting, e)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 border border-slate-800 rounded-lg transition-colors flex-1 md:flex-none justify-center flex"><Trash2 className="w-5 h-5" /></button></>
+                           )}
+                        </div>
                       </div>
                     </div>
                   );

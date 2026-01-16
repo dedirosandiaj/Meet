@@ -39,6 +39,7 @@ function App() {
         const setupMatch = path.match(/\/setup\/([^/]+)/);
         const resetMatch = path.match(/\/reset\/([^/]+)/);
         const joinMatch = path.match(/\/join\/([^/]+)/);
+        const meetingMatch = path.match(/\/meeting\/([^/]+)/);
         
         // Handle User Setup (New Account) -> /setup/:token
         if (setupMatch && setupMatch[1]) {
@@ -76,12 +77,27 @@ function App() {
           }
         }
 
+        // Handle Direct Meeting Link -> /meeting/:meetingId
+        if (meetingMatch && meetingMatch[1] && sessionUser) {
+           setCurrentMeetingId(meetingMatch[1]);
+           setView('MEETING');
+           const dbUser = await storageService.getUserById(sessionUser.id);
+           if (dbUser) setUser(dbUser);
+           setLoading(false);
+           return;
+        }
+
         if (sessionUser) {
           // Verify user still exists in Cloud DB
           const dbUser = await storageService.getUserById(sessionUser.id);
           if (dbUser) {
              setUser(dbUser);
              setView('DASHBOARD');
+             
+             // If landing on root logged in, redirect to dashboard/meetings
+             if (path === '/') {
+                window.history.replaceState({}, '', '/dashboard/meetings');
+             }
           } else {
              storageService.logout();
           }
@@ -129,6 +145,9 @@ function App() {
         setPendingMeetingDetails(meeting);
       }
       setPendingJoinId(null);
+    } else {
+      // Default login redirection
+      window.history.pushState({}, '', '/dashboard/meetings');
     }
   };
 
@@ -144,30 +163,29 @@ function App() {
     console.log(`Joining meeting ${meetingId}`);
     setCurrentMeetingId(meetingId);
     setView('MEETING');
+    window.history.pushState({}, '', `/meeting/${meetingId}`);
   };
 
   const handleEndCall = () => {
     setCurrentMeetingId(null);
     setView('DASHBOARD');
-    window.history.pushState({}, document.title, '/');
+    window.history.pushState({}, document.title, '/dashboard/meetings');
   };
 
   const handleConfirmJoin = () => {
     if (pendingMeetingDetails) {
-      window.history.pushState({}, document.title, '/');
-      setCurrentMeetingId(pendingMeetingDetails.id);
+      handleJoinMeeting(pendingMeetingDetails.id);
       setPendingMeetingDetails(null);
-      setView('MEETING');
     }
   };
 
   const handleCancelJoin = () => {
-    window.history.pushState({}, document.title, '/');
+    window.history.pushState({}, document.title, '/dashboard/meetings');
     setPendingMeetingDetails(null);
   };
 
   const handleSetupSuccess = (userData: User) => {
-    window.history.pushState({}, document.title, '/');
+    window.history.pushState({}, document.title, '/dashboard/meetings');
     setUser(userData);
     setView('DASHBOARD');
     setSetupToken(null);

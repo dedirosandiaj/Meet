@@ -38,7 +38,17 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, appSettings, onUpdateSettings }) => {
-  const [activeTab, setActiveTab] = useState<'meetings' | 'users' | 'settings'>('meetings');
+  const isAdmin = user.role === UserRole.ADMIN;
+
+  // --- ROUTING HELPER ---
+  const getTabFromUrl = (): 'meetings' | 'users' | 'settings' => {
+    const path = window.location.pathname;
+    if (path.includes('/dashboard/users')) return 'users';
+    if (path.includes('/dashboard/settings')) return 'settings';
+    return 'meetings'; // Default
+  };
+
+  const [activeTab, setActiveTab] = useState<'meetings' | 'users' | 'settings'>(getTabFromUrl());
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -106,7 +116,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
 
-  const isAdmin = user.role === UserRole.ADMIN;
+  // --- ROUTING EFFECT ---
+  // Listen for popstate (Browser Back/Forward buttons)
+  useEffect(() => {
+    const handlePopState = () => {
+      const tab = getTabFromUrl();
+      // Access control check
+      if (!isAdmin && (tab === 'users' || tab === 'settings')) {
+        setActiveTab('meetings');
+        window.history.replaceState({}, '', '/dashboard/meetings');
+      } else {
+        setActiveTab(tab);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isAdmin]);
+
+  // Initial access check
+  useEffect(() => {
+    const tab = getTabFromUrl();
+    if (!isAdmin && (tab === 'users' || tab === 'settings')) {
+       navigate('meetings', true);
+    }
+  }, [isAdmin]);
+
+  const navigate = (tab: 'meetings' | 'users' | 'settings', replace = false) => {
+    setActiveTab(tab);
+    const url = `/dashboard/${tab}`;
+    if (replace) {
+      window.history.replaceState({}, '', url);
+    } else {
+      window.history.pushState({}, '', url);
+    }
+  };
 
   // Load Data
   useEffect(() => {
@@ -593,9 +637,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
 
         <nav className="flex-1 px-3 space-y-1">
-          <button onClick={() => setActiveTab('meetings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'meetings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Calendar className="w-5 h-5" />Meetings</button>
-          {isAdmin && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Users className="w-5 h-5" />Manage Users</button>}
-          {isAdmin && <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Settings className="w-5 h-5" />Settings</button>}
+          <button onClick={() => navigate('meetings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'meetings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Calendar className="w-5 h-5" />Meetings</button>
+          {isAdmin && <button onClick={() => navigate('users')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Users className="w-5 h-5" />Manage Users</button>}
+          {isAdmin && <button onClick={() => navigate('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Settings className="w-5 h-5" />Settings</button>}
         </nav>
 
         <div className="p-4 border-t border-slate-800">

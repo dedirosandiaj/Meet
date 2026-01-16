@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, Meeting, AppSettings } from '../types';
 import { storageService } from '../services/storage';
@@ -897,11 +898,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                            </div>
                          )}
                          <div className="flex gap-1">
+                             {/* SIMPLIFIED RESET PASSWORD BUTTON (1 BUTTON ONLY) */}
                              {u.status === 'active' && (
-                                <>
-                                  <button onClick={() => handleSendResetEmail(u)} className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700" title="Send Reset Email"><Mail className="w-4 h-4" /></button>
-                                  <button onClick={() => handleCopyResetLink(u)} className={`p-1.5 rounded-lg transition-all border border-transparent ${inviteCopiedId === u.id ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-700 hover:text-orange-400 hover:border-slate-600'}`} title="Copy Reset Link">{inviteCopiedId === u.id ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}</button>
-                                </>
+                                <button onClick={() => handleSendResetEmail(u)} className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700 group" title="Reset Password (Sends Email)">
+                                    <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform" />
+                                </button>
                              )}
                              <button onClick={() => handleEditUserClick(u)} className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Pencil className="w-4 h-4" /></button>
                              {u.id !== user.id && <button onClick={() => handleDeleteUserClick(u)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Trash2 className="w-4 h-4" /></button>}

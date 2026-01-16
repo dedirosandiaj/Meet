@@ -7,13 +7,18 @@ import emailjs from '@emailjs/browser';
 // 1. Buat Service Baru (pilih Gmail) -> Copy Service ID
 // 2. Buat Template Baru -> Copy Template ID
 // 3. Masuk ke Account > General -> Copy Public Key
-// 
-// Pastikan Template EmailJS Anda memiliki variabel: 
-// {{to_email}}, {{to_name}}, {{subject}}, {{message}}
 
 const EMAILJS_SERVICE_ID = 'service_e1y1i0m';    // Ganti dengan Service ID Anda
 const EMAILJS_TEMPLATE_ID = 'template_s9v9uq3';  // Ganti dengan Template ID Anda
-const EMAILJS_PUBLIC_KEY = '7ELueXyK3jAvOi0BO';    // Ganti dengan Public Key Anda
+const EMAILJS_PUBLIC_KEY = '7ELueXyK3jAvOi0BO';  // Ganti dengan Public Key Anda
+
+// Helper to trigger toast
+const triggerToast = (type: 'success' | 'error', title: string, message: string) => {
+    const event = new CustomEvent('zoomclone-toast', {
+        detail: { type, title, message }
+    });
+    window.dispatchEvent(event);
+};
 
 export const emailService = {
   /**
@@ -26,16 +31,24 @@ export const emailService = {
     // Cek apakah user sudah mengganti placeholder
     if (EMAILJS_SERVICE_ID.includes('YOUR_') || EMAILJS_PUBLIC_KEY.includes('YOUR_')) {
         console.warn("EmailJS credentials not configured in services/email.ts");
-        alert("Konfigurasi EmailJS belum diset di services/email.ts. Membuka aplikasi email default.");
+        triggerToast('error', 'Configuration Missing', "Konfigurasi EmailJS belum diset. Membuka aplikasi email default.");
         emailService.openMailClient(to, subject, bodyText);
         return;
     }
 
     try {
+      // --- PENTING: SETTING EMAILJS DASHBOARD ---
+      // Agar email sampai ke user, pastikan setting di https://dashboard.emailjs.com/admin/templates/:
+      // 1. Field "To Email" HARUS diisi: {{to_email}} 
+      // 2. Field "From Name" bisa diisi: {{from_name}}
+      // 3. Field "Subject" HARUS diisi: {{subject}} (Supaya subjek yang kita set disini muncul)
+      // 4. Isi pesan (Content) harus mengandung: {{message}}
+      
       const templateParams = {
-        to_email: to,
-        to_name: to, // Bisa disesuaikan jika nama tersedia
-        subject: subject,
+        to_email: to,               // Variabel ini wajib dipasang di field "To Email" pada Template EmailJS
+        to_name: to.split('@')[0],  // Nama penerima
+        from_name: appSettings.title, // Nama pengirim
+        subject: subject,             // Subjek dinamis
         message: bodyText,
         app_name: appSettings.title
       };
@@ -49,7 +62,10 @@ export const emailService = {
 
       if (response.status === 200) {
         console.log('SUCCESS!', response.status, response.text);
-        alert(`Email sent successfully to ${to}`);
+        
+        // --- NEW POPUP NOTIFICATION ---
+        triggerToast('success', 'Email Sent Successfully', `Email has been sent to ${to}.\n\nSubjek: "${subject}"`);
+        
       } else {
         throw new Error(`EmailJS returned status: ${response.status}`);
       }
@@ -57,13 +73,17 @@ export const emailService = {
     } catch (err) {
       console.error('EmailJS FAILED...', err);
       console.warn("Falling back to Mailto.");
+      
+      triggerToast('error', 'Email Delivery Failed', "Could not send email automatically. Opening your default mail app instead.");
+      
       // Fallback: Buka aplikasi email user
       emailService.openMailClient(to, subject, bodyText);
     }
   },
 
   sendInvite: (email: string, name: string, inviteLink: string, appSettings: AppSettings) => {
-    const subject = `Invitation to join ${appSettings.title}`;
+    // SUBJEK DIUBAH DISINI (Invitation & Account Activation)
+    const subject = `Welcome to ${appSettings.title} - Activate Your Account`;
     const body = `Hi ${name},
 
 You have been invited to join the ${appSettings.title} workspace.
@@ -77,13 +97,11 @@ If you did not expect this invitation, please ignore this email.
 Best regards,
 ${appSettings.title} Admin`;
 
-    // Kita passing juga nama penerima untuk template params jika dibutuhkan
-    // Namun fungsi sendEmail di atas masih menggunakan signature (to, subject, body, appSettings)
-    // Untuk EmailJS, kita kirim isi body yang sudah diformat.
     emailService.sendEmail(email, subject, body, appSettings);
   },
 
   sendPasswordReset: (email: string, name: string, resetLink: string, appSettings: AppSettings) => {
+    // SUBJEK DIUBAH DISINI (Password Reset)
     const subject = `Reset Password Request - ${appSettings.title}`;
     const body = `Hi ${name},
 

@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import MeetingRoom from './components/MeetingRoom';
 import SetPassword from './components/SetPassword';
+import GlobalToast from './components/GlobalToast'; // Import Notification Component
 import { User, AppView, Meeting, AppSettings } from './types';
 import { storageService } from './services/storage';
 import { Video, ArrowRight, Database } from 'lucide-react';
@@ -229,6 +231,8 @@ function App() {
 
   return (
     <>
+      <GlobalToast /> {/* Notification System Mounted Here */}
+      
       {view === 'LOGIN' || !user ? (
         <Login onLogin={handleLogin} appSettings={appSettings} />
       ) : (

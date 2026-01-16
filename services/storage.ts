@@ -1,8 +1,14 @@
-import { User, Meeting, UserRole, Participant } from '../types';
+import { User, Meeting, UserRole, Participant, AppSettings } from '../types';
 import { supabase } from './supabaseClient';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 const SESSION_KEY = 'zoomclone_session';
+const SETTINGS_KEY = 'zoomclone_settings';
+
+const DEFAULT_SETTINGS: AppSettings = {
+  title: 'ZoomClone AI',
+  iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png' // Default generic video icon
+};
 
 export const storageService = {
   // --- AUTHENTICATION & SESSION ---
@@ -39,6 +45,48 @@ export const storageService = {
   getSession: (): User | null => {
     const session = localStorage.getItem(SESSION_KEY);
     return session ? JSON.parse(session) : null;
+  },
+
+  // --- APP SETTINGS (Global Config) ---
+
+  getAppSettings: async (): Promise<AppSettings> => {
+    // 1. Try fetching from Supabase
+    const { data } = await supabase
+      .from('app_settings')
+      .select('*')
+      .single();
+
+    if (data) {
+      const settings = { title: data.title, iconUrl: data.icon_url };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      return settings;
+    }
+
+    // 2. Fallback to LocalStorage
+    const local = localStorage.getItem(SETTINGS_KEY);
+    if (local) return JSON.parse(local);
+
+    // 3. Default
+    return DEFAULT_SETTINGS;
+  },
+
+  updateAppSettings: async (settings: AppSettings): Promise<AppSettings> => {
+    // Save to LocalStorage immediately for instant UI feedback
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+
+    // Upsert to Supabase (Assuming table app_settings exists with id=1)
+    // We use a fixed ID '1' to ensure we only have one config row
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ 
+        id: 1, 
+        title: settings.title, 
+        icon_url: settings.iconUrl 
+      });
+
+    if (error) console.error("Error saving settings to DB:", error);
+    
+    return settings;
   },
 
   // --- MEETINGS OPERATIONS ---
@@ -171,7 +219,7 @@ export const storageService = {
   // --- USERS OPERATIONS ---
 
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase.from('users').select('*');
+    const { data, error } = await supabase.from('users').select('*').order('name');
     if (error) return [];
     return (data as User[]) || [];
   },
@@ -208,6 +256,30 @@ export const storageService = {
     const { error } = await supabase.from('users').insert([newUser]);
     if (error) return null;
     return newUser;
+  },
+
+  updateUser: async (user: User): Promise<User[]> => {
+    const { error } = await supabase
+      .from('users')
+      .update({
+        name: user.name,
+        email: user.email,
+        role: user.role
+      })
+      .eq('id', user.id);
+
+    if (error) console.error("Error updating user:", error);
+    return storageService.getUsers();
+  },
+
+  deleteUser: async (id: string): Promise<User[]> => {
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) console.error("Error deleting user:", error);
+    return storageService.getUsers();
   },
 
   setUserPassword: async (id: string, newPassword: string): Promise<User | null> => {

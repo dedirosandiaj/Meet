@@ -3,7 +3,7 @@ import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import MeetingRoom from './components/MeetingRoom';
 import SetPassword from './components/SetPassword';
-import { User, AppView, Meeting } from './types';
+import { User, AppView, Meeting, AppSettings } from './types';
 import { storageService } from './services/storage';
 import { Video, ArrowRight, Database } from 'lucide-react';
 
@@ -13,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState('Connecting to Cloud...');
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings>({ title: 'ZoomClone AI', iconUrl: 'https://cdn-icons-png.flaticon.com/512/4406/4406234.png' });
   
   // State for pending join (from URL)
   const [pendingJoinId, setPendingJoinId] = useState<string | null>(null);
@@ -26,8 +27,13 @@ function App() {
   useEffect(() => {
     const startApp = async () => {
       try {
-        setLoadingMsg('Verifying Session...');
+        setLoadingMsg('Loading Configuration...');
         
+        // 1. Load App Settings (Title & Icon)
+        const settings = await storageService.getAppSettings();
+        setAppSettings(settings);
+        applyAppSettings(settings);
+
         // Check URL Pathname for Slugs
         const path = window.location.pathname;
         const setupMatch = path.match(/\/setup\/([^/]+)/);
@@ -92,6 +98,25 @@ function App() {
 
     startApp();
   }, []);
+
+  const applyAppSettings = (settings: AppSettings) => {
+    // Update Document Title
+    document.title = settings.title;
+
+    // Update Favicon
+    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+    }
+    link.href = settings.iconUrl;
+  };
+
+  const handleSettingsUpdate = (newSettings: AppSettings) => {
+      setAppSettings(newSettings);
+      applyAppSettings(newSettings);
+  };
 
   const handleLogin = async (userData: User) => {
     setUser(userData);
@@ -193,6 +218,8 @@ function App() {
           user={user} 
           onLogout={handleLogout} 
           onJoinMeeting={handleJoinMeeting} 
+          appSettings={appSettings}
+          onUpdateSettings={handleSettingsUpdate}
         />
       )}
 

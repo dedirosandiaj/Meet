@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, Meeting } from '../types';
+import { User, UserRole, Meeting, AppSettings } from '../types';
 import { storageService } from '../services/storage';
 import { 
   Calendar, 
@@ -22,30 +22,40 @@ import {
   UserPlus,
   RotateCcw,
   Menu,
-  Loader2
+  Loader2,
+  MoreVertical,
+  Save,
+  Globe,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface DashboardProps {
   user: User;
   onLogout: () => void;
   onJoinMeeting: (meetingId: string) => void;
+  appSettings: AppSettings;
+  onUpdateSettings: (settings: AppSettings) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) => {
-  const [activeTab, setActiveTab] = useState<'meetings' | 'users'>('meetings');
+const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, appSettings, onUpdateSettings }) => {
+  const [activeTab, setActiveTab] = useState<'meetings' | 'users' | 'settings'>('meetings');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Modal States
+  // Meeting Modal States
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
   
-  // Delete Modal State
+  // User Modal States
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  
+  // Delete Modal States
   const [meetingToDelete, setMeetingToDelete] = useState<Meeting | null>(null);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   
   // New Meeting Created Modal State
   const [createdMeeting, setCreatedMeeting] = useState<Meeting | null>(null);
@@ -65,7 +75,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     time: ''
   });
 
-  // Edit Form State
+  // Edit Meeting Form State
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [editForm, setEditForm] = useState({
     title: '',
@@ -79,6 +89,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     email: '',
     role: UserRole.MEMBER
   });
+
+  // Edit User Form State
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editUserForm, setEditUserForm] = useState({
+    name: '',
+    email: '',
+    role: UserRole.MEMBER
+  });
+
+  // Settings Form State
+  const [settingsForm, setSettingsForm] = useState({
+      title: appSettings.title,
+      iconUrl: appSettings.iconUrl
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
 
   const isAdmin = user.role === UserRole.ADMIN;
 
@@ -99,6 +125,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     fetchData();
   }, [isAdmin, activeTab]);
 
+  // Sync settings form with prop changes
+  useEffect(() => {
+    setSettingsForm({
+        title: appSettings.title,
+        iconUrl: appSettings.iconUrl
+    });
+  }, [appSettings]);
+
   // Close mobile menu when tab changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -106,6 +140,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
 
   // --- ACTIONS ---
 
+  // Settings Actions
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    setSettingsSavedSuccess(false);
+
+    try {
+        const newSettings = await storageService.updateAppSettings({
+            title: settingsForm.title,
+            iconUrl: settingsForm.iconUrl
+        });
+        onUpdateSettings(newSettings);
+        setSettingsSavedSuccess(true);
+        setTimeout(() => setSettingsSavedSuccess(false), 3000);
+    } catch (err) {
+        console.error("Failed to save settings", err);
+    } finally {
+        setIsSavingSettings(false);
+    }
+  };
+
+  // Meeting Actions
   const handleDeleteClick = (meeting: Meeting, e: React.MouseEvent) => {
     e.stopPropagation();
     setMeetingToDelete(meeting);
@@ -121,7 +177,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
 
   const handleEditClick = (meeting: Meeting, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Convert "Today"/"Tomorrow" to YYYY-MM-DD for the input
     let dateVal = meeting.date;
     const now = new Date();
     if (meeting.date === 'Today') {
@@ -158,26 +213,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     setEditingMeeting(null);
   };
 
-  const handleCopyId = (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    navigator.clipboard.writeText(id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleShareMeeting = (meeting: Meeting, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    
-    const baseUrl = window.location.origin;
-    const joinUrl = `${baseUrl}/join/${meeting.id}`;
-    
-    const shareText = `📅 Meeting Invite\n\nTopic: ${meeting.title}\nDate: ${meeting.date}\nTime: ${meeting.time}\n\n🔗 Join Link:\n${joinUrl}\n\n🔑 Meeting ID: ${meeting.id}`;
-
-    navigator.clipboard.writeText(shareText);
-    setSharedId(meeting.id);
-    setTimeout(() => setSharedId(null), 2000);
-  };
-
+  // User Actions
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (addUserForm.name && addUserForm.email) {
@@ -186,6 +222,45 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       setAllUsers(updatedUsers);
       setShowAddUserModal(false);
       setAddUserForm({ name: '', email: '', role: UserRole.MEMBER });
+    }
+  };
+
+  const handleEditUserClick = (targetUser: User) => {
+    setEditingUser(targetUser);
+    setEditUserForm({
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role
+    });
+    setShowEditUserModal(true);
+  };
+
+  const handleEditUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingUser && editUserForm.name && editUserForm.email) {
+        const updatedUser: User = {
+            ...editingUser,
+            name: editUserForm.name,
+            email: editUserForm.email,
+            role: editUserForm.role
+        };
+        const updatedList = await storageService.updateUser(updatedUser);
+        setAllUsers(updatedList);
+        setShowEditUserModal(false);
+        setEditingUser(null);
+    }
+  };
+
+  const handleDeleteUserClick = (targetUser: User) => {
+    if (targetUser.id === user.id) return; // Prevent self-delete
+    setUserToDelete(targetUser);
+  };
+
+  const confirmDeleteUser = async () => {
+    if (userToDelete) {
+        const updatedList = await storageService.deleteUser(userToDelete.id);
+        setAllUsers(updatedList);
+        setUserToDelete(null);
     }
   };
 
@@ -198,7 +273,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
 
     const baseUrl = window.location.origin;
     const inviteUrl = `${baseUrl}/setup/${token}`;
-    const message = `👋 Hello ${targetUser.name},\n\nYou have been invited to join the ZoomClone workspace.\n\nPlease click the link below to set your password and activate your account:\n\n🔗 ${inviteUrl}`;
+    const message = `👋 Hello ${targetUser.name},\n\nYou have been invited to join the ${appSettings.title} workspace.\n\nPlease click the link below to set your password and activate your account:\n\n🔗 ${inviteUrl}`;
 
     navigator.clipboard.writeText(message);
     setInviteCopiedId(targetUser.id);
@@ -222,7 +297,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     setAllUsers(updatedUsers);
   };
 
-  // Helper: Generate 5-character alphanumeric ID
+  // Misc Helpers
+  const handleCopyId = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareMeeting = (meeting: Meeting, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const baseUrl = window.location.origin;
+    const joinUrl = `${baseUrl}/join/${meeting.id}`;
+    const shareText = `📅 Meeting Invite\n\nTopic: ${meeting.title}\nDate: ${meeting.date}\nTime: ${meeting.time}\n\n🔗 Join Link:\n${joinUrl}\n\n🔑 Meeting ID: ${meeting.id}`;
+    navigator.clipboard.writeText(shareText);
+    setSharedId(meeting.id);
+    setTimeout(() => setSharedId(null), 2000);
+  };
+
   const generateMeetingId = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let result = '';
@@ -232,11 +324,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     return result;
   };
 
-  // 1. Instant Meeting Logic
   const handleInstantMeeting = async () => {
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
-    
     const id = generateMeetingId();
     const newMeeting: Meeting = {
       id: id,
@@ -247,13 +337,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       participantsCount: 1,
       status: 'live'
     };
-    
     const updated = await storageService.createMeeting(newMeeting);
     setMeetings(updated);
     setCreatedMeeting(newMeeting);
   };
 
-  // 2. Join Meeting Logic
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (joinId.trim()) {
@@ -263,11 +351,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     }
   };
 
-  // 3. Schedule Meeting Logic
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduleForm.title || !scheduleForm.date || !scheduleForm.time) return;
-
     const id = generateMeetingId();
     const newMeeting: Meeting = {
       id: id,
@@ -278,10 +364,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       participantsCount: 0,
       status: 'upcoming'
     };
-
     const updated = await storageService.createMeeting(newMeeting);
     setMeetings(updated);
-    
     setShowScheduleModal(false);
     setScheduleForm({ title: '', date: '', time: '' });
     setCreatedMeeting(newMeeting);
@@ -294,8 +378,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
     setCreatedMeeting(null);
     setCopied(false);
   };
-
-  // --- HELPERS ---
 
   const formatDateDisplay = (dateString: string) => {
     if (dateString === 'Today' || dateString === 'Tomorrow') return dateString;
@@ -336,7 +418,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
 
       const now = new Date();
       const diffMinutes = (targetDate.getTime() - now.getTime()) / 1000 / 60;
-
       return diffMinutes > 5 ? 'waiting' : 'live';
     } catch (e) {
       return 'live'; 
@@ -346,7 +427,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
       
-      {/* DELETE CONFIRMATION MODAL */}
+      {/* DELETE MEETING MODAL */}
       {meetingToDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
@@ -368,6 +449,28 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
         </div>
       )}
 
+      {/* DELETE USER MODAL */}
+      {userToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                <Trash2 className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-lg font-bold text-white mb-2">Remove User?</h3>
+              <p className="text-slate-400 text-sm mb-1">Are you sure you want to remove</p>
+              <p className="text-white font-medium mb-4">"{userToDelete.name}"?</p>
+              <p className="text-slate-500 text-xs">They will lose access immediately.</p>
+            </div>
+            <div className="flex border-t border-slate-800 bg-slate-950/50">
+               <button onClick={() => setUserToDelete(null)} className="flex-1 py-3 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors text-sm font-medium">Cancel</button>
+               <div className="w-px bg-slate-800"></div>
+               <button onClick={confirmDeleteUser} className="flex-1 py-3 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm font-bold">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ADD USER MODAL */}
       {showAddUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
@@ -381,6 +484,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
               <div><label className="block text-sm text-slate-400 mb-1">Email Address</label><input type="email" placeholder="john@example.com" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={addUserForm.email} onChange={(e) => setAddUserForm({...addUserForm, email: e.target.value})} required /></div>
               <div><label className="block text-sm text-slate-400 mb-1">Role</label><select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none appearance-none" value={addUserForm.role} onChange={(e) => setAddUserForm({...addUserForm, role: e.target.value as UserRole})}><option value={UserRole.MEMBER}>Member</option><option value={UserRole.ADMIN}>Admin</option></select></div>
               <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowAddUserModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">Add User</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT USER MODAL */}
+      {showEditUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+              <h3 className="text-white font-semibold">Edit User</h3>
+              <button onClick={() => setShowEditUserModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+            </div>
+            <form onSubmit={handleEditUserSubmit} className="p-6 space-y-4">
+              <div><label className="block text-sm text-slate-400 mb-1">Full Name</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editUserForm.name} onChange={(e) => setEditUserForm({...editUserForm, name: e.target.value})} required /></div>
+              <div><label className="block text-sm text-slate-400 mb-1">Email Address</label><input type="email" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editUserForm.email} onChange={(e) => setEditUserForm({...editUserForm, email: e.target.value})} required /></div>
+              <div><label className="block text-sm text-slate-400 mb-1">Role</label><select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none appearance-none" value={editUserForm.role} onChange={(e) => setEditUserForm({...editUserForm, role: e.target.value as UserRole})}><option value={UserRole.MEMBER}>Member</option><option value={UserRole.ADMIN}>Admin</option></select></div>
+              <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">Save Changes</button></div>
             </form>
           </div>
         </div>
@@ -444,8 +565,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
       {/* --- MOBILE HEADER --- */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-           <div className="p-1.5 bg-blue-600 rounded-lg"><Video className="w-5 h-5 text-white" /></div>
-           <span className="font-bold text-white text-lg tracking-tight">ZoomClone</span>
+           <img src={appSettings.iconUrl} alt="Logo" className="w-8 h-8 object-contain" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}} />
+           <span className="font-bold text-white text-lg tracking-tight">{appSettings.title}</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-300 hover:bg-slate-800 rounded-lg">
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -456,7 +577,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
 
       {/* --- SIDEBAR --- */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:w-64 md:flex ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-6 items-center gap-3 hidden md:flex"><div className="p-2 bg-blue-600 rounded-lg"><Video className="w-5 h-5 text-white" /></div><span className="text-lg font-bold text-white tracking-tight">ZoomClone</span></div>
+        <div className="p-6 items-center gap-3 hidden md:flex">
+             <div className="w-10 h-10 flex items-center justify-center bg-slate-800 rounded-xl border border-slate-700 p-1.5">
+                <img src={appSettings.iconUrl} alt="Logo" className="w-full h-full object-contain" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}} />
+             </div>
+             <span className="text-lg font-bold text-white tracking-tight truncate">{appSettings.title}</span>
+        </div>
         <div className="p-4 flex items-center justify-between md:hidden border-b border-slate-800"><span className="text-lg font-bold text-white">Menu</span><button onClick={() => setIsMobileMenuOpen(false)}><X className="w-6 h-6 text-slate-400"/></button></div>
 
         <div className="px-4 py-2 mt-2 md:mt-0">
@@ -469,7 +595,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
         <nav className="flex-1 px-3 space-y-1">
           <button onClick={() => setActiveTab('meetings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'meetings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Calendar className="w-5 h-5" />Meetings</button>
           {isAdmin && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Users className="w-5 h-5" />Manage Users</button>}
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"><Settings className="w-5 h-5" />Settings</button>
+          <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Settings className="w-5 h-5" />Settings</button>
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -555,17 +681,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
                <div className="overflow-x-auto">
                  <div className="min-w-[600px]">
-                   <div className="grid grid-cols-4 p-4 border-b border-slate-800 bg-slate-800/50 text-xs font-semibold text-slate-400 uppercase tracking-wider"><div className="col-span-2">User</div><div>Role</div><div className="text-right">Status</div></div>
+                   <div className="grid grid-cols-4 p-4 border-b border-slate-800 bg-slate-800/50 text-xs font-semibold text-slate-400 uppercase tracking-wider"><div className="col-span-2">User</div><div>Role</div><div className="text-right">Actions</div></div>
                    {allUsers.map((u, i) => (
-                     <div key={u.id} className="grid grid-cols-4 p-4 border-b border-slate-800 items-center hover:bg-slate-800/30 transition-colors">
+                     <div key={u.id} className="grid grid-cols-4 p-4 border-b border-slate-800 items-center hover:bg-slate-800/30 transition-colors group">
                        <div className="col-span-2 flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center text-sm font-bold text-white overflow-hidden shrink-0">{u.avatar.includes('http') ? <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" /> : u.name.charAt(0)}</div><div className="overflow-hidden"><p className="text-sm font-medium text-white truncate">{u.name}</p><p className="text-xs text-slate-500 truncate">{u.email}</p></div></div>
                        <div><span className={`text-xs px-2 py-1 rounded-full font-medium ${u.role === 'ADMIN' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-slate-700 text-slate-300'}`}>{u.role}</span></div>
-                       <div className="text-right">
+                       <div className="text-right flex items-center justify-end gap-2">
                          {u.status === 'active' ? (
-                           <div className="flex items-center justify-end gap-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span><button onClick={() => handleCopyResetLink(u)} className={`p-1.5 rounded-lg transition-all border border-transparent ${inviteCopiedId === u.id ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-700 hover:text-orange-400 hover:border-slate-600'}`} title="Reset Password Link">{inviteCopiedId === u.id ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}</button></div>
+                           <div className="flex items-center gap-1 mr-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span></div>
                          ) : (
-                           <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 ml-auto px-3 py-1.5 rounded-lg transition-all ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<>Copied! <Check className="w-3 h-3" /></>) : (<>Pending <LinkIcon className="w-3 h-3" /></>)}</button>
+                           <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 px-2 py-1 rounded-lg transition-all mr-2 ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<><Check className="w-3 h-3" /></>) : (<>Invite <LinkIcon className="w-3 h-3" /></>)}</button>
                          )}
+                         <div className="flex gap-1">
+                             {u.status === 'active' && <button onClick={() => handleCopyResetLink(u)} className={`p-1.5 rounded-lg transition-all border border-transparent ${inviteCopiedId === u.id ? 'bg-orange-600 text-white' : 'text-slate-500 hover:bg-slate-700 hover:text-orange-400 hover:border-slate-600'}`} title="Reset Password Link">{inviteCopiedId === u.id ? <Check className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}</button>}
+                             <button onClick={() => handleEditUserClick(u)} className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Pencil className="w-4 h-4" /></button>
+                             {u.id !== user.id && <button onClick={() => handleDeleteUserClick(u)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Trash2 className="w-4 h-4" /></button>}
+                         </div>
                        </div>
                      </div>
                    ))}
@@ -573,6 +704,80 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting }) 
                </div>
             </div>
           </div>
+        )}
+
+        {!isLoading && activeTab === 'settings' && (
+            <div className="max-w-3xl mx-auto animate-[fadeIn_0.2s_ease-out]">
+                <div className="mb-8">
+                    <h1 className="text-2xl font-bold text-white mb-1">Application Settings</h1>
+                    <p className="text-slate-400 text-sm md:text-base">Customize the workspace branding</p>
+                </div>
+
+                <form onSubmit={handleSaveSettings} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                    <div className="p-6 md:p-8 space-y-8">
+                        {/* Title Section */}
+                        <div className="space-y-4">
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                                <Globe className="w-4 h-4" /> Application Title
+                            </label>
+                            <div className="relative">
+                                <input 
+                                    type="text" 
+                                    value={settingsForm.title}
+                                    onChange={(e) => setSettingsForm({...settingsForm, title: e.target.value})}
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all"
+                                    placeholder="ZoomClone AI"
+                                    required
+                                />
+                                <p className="mt-2 text-xs text-slate-500">This will appear in the browser tab and dashboard header.</p>
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-slate-800" />
+
+                        {/* Icon Section */}
+                        <div className="space-y-4">
+                             <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                                <ImageIcon className="w-4 h-4" /> Icon URL (Favicon & Logo)
+                            </label>
+                            <div className="flex flex-col md:flex-row gap-6">
+                                <div className="flex-1">
+                                    <input 
+                                        type="url" 
+                                        value={settingsForm.iconUrl}
+                                        onChange={(e) => setSettingsForm({...settingsForm, iconUrl: e.target.value})}
+                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all mb-2"
+                                        placeholder="https://example.com/logo.png"
+                                        required
+                                    />
+                                    <p className="text-xs text-slate-500">Enter a direct link to a PNG or ICO file.</p>
+                                </div>
+                                <div className="shrink-0 flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-xl w-24 h-24">
+                                     <img 
+                                        src={settingsForm.iconUrl || 'https://via.placeholder.com/64'} 
+                                        alt="Preview" 
+                                        className="w-10 h-10 object-contain mb-2" 
+                                        onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}}
+                                     />
+                                     <span className="text-[10px] text-slate-500">Preview</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-950/50 p-6 border-t border-slate-800 flex items-center justify-end gap-4">
+                        {settingsSavedSuccess && <span className="text-sm text-green-500 font-medium flex items-center gap-1 animate-pulse"><Check className="w-4 h-4" /> Saved Successfully</span>}
+                        <button 
+                            type="submit" 
+                            disabled={isSavingSettings}
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
         )}
       </main>
     </div>

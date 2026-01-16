@@ -32,7 +32,6 @@ export interface ChatMessage {
   isSelf: boolean;
 }
 
-// New Interface for Realtime Participants
 export interface Participant {
   id: string; // Database Row ID
   meeting_id: string;
@@ -40,6 +39,11 @@ export interface Participant {
   name: string;
   avatar: string;
   role: string;
+}
+
+export interface AppSettings {
+  title: string;
+  iconUrl: string;
 }
 
 export type AppView = 'LOGIN' | 'DASHBOARD' | 'MEETING' | 'SET_PASSWORD';

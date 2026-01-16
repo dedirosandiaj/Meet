@@ -1,5 +1,6 @@
 import { User, Meeting, UserRole, Participant } from '../types';
 import { supabase } from './supabaseClient';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 const SESSION_KEY = 'zoomclone_session';
 
@@ -89,29 +90,28 @@ export const storageService = {
     return storageService.getMeetings();
   },
 
-  // --- REALTIME PARTICIPANTS OPERATIONS ---
+  // --- REALTIME PARTICIPANTS & SIGNALING (WebRTC) ---
 
-  // User enters the room
+  // User enters the room (DB entry)
   joinMeetingRoom: async (meetingId: string, user: User) => {
-    // Check if already in to prevent duplicates
+    // Check if already in
     const { data } = await supabase
       .from('participants')
       .select('*')
       .eq('meeting_id', meetingId)
       .eq('user_id', user.id);
     
-    if (data && data.length > 0) return;
-
-    await supabase.from('participants').insert([{
-      meeting_id: meetingId,
-      user_id: user.id,
-      name: user.name,
-      avatar: user.avatar,
-      role: user.role
-    }]);
+    if (!data || data.length === 0) {
+      await supabase.from('participants').insert([{
+        meeting_id: meetingId,
+        user_id: user.id,
+        name: user.name,
+        avatar: user.avatar,
+        role: user.role
+      }]);
+    }
   },
 
-  // User leaves the room
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
     await supabase
       .from('participants')
@@ -120,7 +120,6 @@ export const storageService = {
       .eq('user_id', userId);
   },
 
-  // Get current list
   getParticipants: async (meetingId: string): Promise<Participant[]> => {
     const { data } = await supabase
       .from('participants')
@@ -129,26 +128,44 @@ export const storageService = {
     return (data as Participant[]) || [];
   },
 
-  // Subscribe to changes
-  subscribeToParticipants: (meetingId: string, callback: (participants: Participant[]) => void) => {
+  // Combine DB changes and Broadcast Signaling for WebRTC
+  subscribeToMeeting: (
+    meetingId: string, 
+    onParticipantsUpdate: (participants: Participant[]) => void,
+    onSignal: (payload: any) => void
+  ): RealtimeChannel => {
+    
     // Initial fetch
-    storageService.getParticipants(meetingId).then(callback);
+    storageService.getParticipants(meetingId).then(onParticipantsUpdate);
 
-    // Subscribe
-    const channel = supabase
-      .channel('public:participants')
+    const channel = supabase.channel(`meeting:${meetingId}`);
+
+    channel
+      // 1. Listen for DB Changes (List of people)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` },
         async () => {
-          // Simplest way: re-fetch all on any change to ensure sync
           const updated = await storageService.getParticipants(meetingId);
-          callback(updated);
+          onParticipantsUpdate(updated);
         }
       )
+      // 2. Listen for WebRTC Signals (Video/Audio Handshake)
+      .on('broadcast', { event: 'signal' }, (payload) => {
+        onSignal(payload.payload);
+      })
       .subscribe();
 
     return channel;
+  },
+
+  // Send a WebRTC Signal to others in the room
+  sendSignal: async (channel: RealtimeChannel, signal: any) => {
+    await channel.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: signal,
+    });
   },
 
   // --- USERS OPERATIONS ---

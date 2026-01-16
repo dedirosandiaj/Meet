@@ -82,7 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Invite/Reset Link Copied State
   const [inviteCopiedId, setInviteCopiedId] = useState<string | null>(null);
   
-  // Loading state for sending reset email
+  // Loading state for sending emails
   const [sendingResetId, setSendingResetId] = useState<string | null>(null);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
 
@@ -407,6 +407,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         const inviteUrl = `${baseUrl}/setup/${token}`;
         
         await emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
+    } catch (e) {
+        console.error("Invite Email Error:", e);
     } finally {
         setSendingInviteId(null);
     }

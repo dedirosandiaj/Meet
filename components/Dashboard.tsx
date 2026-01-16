@@ -81,6 +81,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
 
   // Invite/Reset Link Copied State
   const [inviteCopiedId, setInviteCopiedId] = useState<string | null>(null);
+  
+  // Loading state for sending reset email
+  const [sendingResetId, setSendingResetId] = useState<string | null>(null);
+  const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
 
   // Form States
   const [joinId, setJoinId] = useState('');
@@ -394,13 +398,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   };
 
   const handleSendInviteEmail = async (targetUser: User) => {
-    const token = await ensureUserToken(targetUser);
-    if (!token) return;
+    setSendingInviteId(targetUser.id);
+    try {
+        const token = await ensureUserToken(targetUser);
+        if (!token) return;
 
-    const baseUrl = window.location.origin;
-    const inviteUrl = `${baseUrl}/setup/${token}`;
-    
-    emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
+        const baseUrl = window.location.origin;
+        const inviteUrl = `${baseUrl}/setup/${token}`;
+        
+        await emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
+    } finally {
+        setSendingInviteId(null);
+    }
   };
 
   const handleCopyResetLink = async (targetUser: User) => {
@@ -420,17 +429,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   };
 
   const handleSendResetEmail = async (targetUser: User) => {
-    const newToken = await storageService.generateUserToken(targetUser.id);
-    if (!newToken) return;
+    setSendingResetId(targetUser.id); // Set loading state for specific user
+    try {
+        const newToken = await storageService.generateUserToken(targetUser.id);
+        if (!newToken) return;
 
-    const baseUrl = window.location.origin;
-    const resetUrl = `${baseUrl}/reset/${newToken}`;
-    
-    emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
-    
-    // Refresh to show updated token state if needed
-    const updatedUsers = await storageService.getUsers();
-    setAllUsers(updatedUsers);
+        const baseUrl = window.location.origin;
+        const resetUrl = `${baseUrl}/reset/${newToken}`;
+        
+        await emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
+        
+        // Refresh to show updated token state if needed
+        const updatedUsers = await storageService.getUsers();
+        setAllUsers(updatedUsers);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setSendingResetId(null); // Clear loading state
+    }
   };
 
   // Misc Helpers
@@ -893,15 +909,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                            <div className="flex items-center gap-1 mr-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span></div>
                          ) : (
                            <div className="flex items-center gap-1 mr-2">
-                             <button onClick={() => handleSendInviteEmail(u)} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all" title="Send Invitation Email"><Mail className="w-3 h-3" /></button>
+                             <button onClick={() => handleSendInviteEmail(u)} disabled={sendingInviteId === u.id} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all disabled:opacity-50" title="Send Invitation Email">
+                                {sendingInviteId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                             </button>
                              <button onClick={() => handleCopyInviteLink(u)} className={`text-xs flex items-center justify-end gap-1 px-2 py-1.5 rounded-lg transition-all ${inviteCopiedId === u.id ? 'bg-green-600 text-white' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}>{inviteCopiedId === u.id ? (<><Check className="w-3 h-3" /></>) : (<>Copy Link <LinkIcon className="w-3 h-3" /></>)}</button>
                            </div>
                          )}
                          <div className="flex gap-1">
-                             {/* SIMPLIFIED RESET PASSWORD BUTTON (1 BUTTON ONLY) */}
+                             {/* SIMPLIFIED RESET PASSWORD BUTTON (1 BUTTON ONLY WITH LOADING) */}
                              {u.status === 'active' && (
-                                <button onClick={() => handleSendResetEmail(u)} className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700 group" title="Reset Password (Sends Email)">
-                                    <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform" />
+                                <button 
+                                    onClick={() => handleSendResetEmail(u)} 
+                                    disabled={sendingResetId === u.id}
+                                    className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700 group disabled:opacity-50 disabled:cursor-not-allowed" 
+                                    title="Reset Password (Sends Email)"
+                                >
+                                    {sendingResetId === u.id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                                    ) : (
+                                        <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform" />
+                                    )}
                                 </button>
                              )}
                              <button onClick={() => handleEditUserClick(u)} className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Pencil className="w-4 h-4" /></button>

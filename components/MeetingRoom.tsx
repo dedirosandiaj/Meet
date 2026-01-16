@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { User, ChatMessage, Meeting } from '../types';
-import { MOCK_CHAT, USERS, formatTime } from '../services/mock';
+import { MOCK_CHAT, formatTime } from '../services/mock';
 import { storageService } from '../services/storage';
 import { 
   Mic, 
@@ -108,13 +108,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     // Only start camera if NOT waiting and NOT loading
     if (!isWaiting && !loading) {
       startWebcam();
-      // Simulate participants joining after a delay
-      const timeout = setTimeout(() => {
-        // Filter out self from mock users
-        const others = USERS.filter(u => u.email !== user.email && u.role === 'MEMBER').slice(0, 3);
-        setActiveParticipants(others);
-      }, 2000);
-      return () => clearTimeout(timeout);
     } else {
       // If waiting, ensure stream is stopped
       if (webcamStream) {
@@ -122,7 +115,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         setWebcamStream(null);
       }
     }
-  }, [isWaiting, loading, user.email]);
+  }, [isWaiting, loading]);
 
   const startWebcam = async () => {
     try {
@@ -312,7 +305,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                  </div>
               </div>
 
-              {/* Mock Participants */}
+              {/* Mock Participants - REMOVED, but structure kept if state updates in future */}
               {activeParticipants.map((p) => (
                  <div key={p.id} className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
                     <img src={p.avatar} alt={p.name} className="w-full h-full object-cover opacity-80" />
@@ -438,7 +431,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                        </div>
                     </div>
 
-                    {/* Others */}
+                    {/* Others - List will be empty now */}
                     {activeParticipants.map((p) => (
                        <div key={p.id} className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-lg cursor-pointer">
                           <img src={p.avatar} alt={p.name} className="w-8 h-8 rounded-full" />

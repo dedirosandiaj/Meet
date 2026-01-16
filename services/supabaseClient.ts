@@ -1,12 +1,16 @@
+/// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 
 // --- KONFIGURASI SUPABASE ---
-// Ganti nilai di bawah ini dengan Project URL dan Anon Key dari dashboard Supabase Anda.
-const SUPABASE_URL = 'https://YOUR_PROJECT_ID.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
+// Saat deploy di Vercel, pastikan Anda menambahkan Environment Variables:
+// VITE_SUPABASE_URL
+// VITE_SUPABASE_ANON_KEY
 
-if (SUPABASE_URL.includes('YOUR_PROJECT_ID')) {
-  console.error("⚠️ SUPABASE BELUM DIKONFIGURASI! Silakan edit file services/supabaseClient.ts");
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://YOUR_PROJECT_ID.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'YOUR_ANON_KEY';
+
+if (!import.meta.env.VITE_SUPABASE_URL) {
+  console.warn("⚠️ VITE_SUPABASE_URL not found. Using placeholder values.");
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

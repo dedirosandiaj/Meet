@@ -43,14 +43,13 @@ export const emailService = {
       // 2. Field "From Name" bisa diisi: {{from_name}}
       // 3. Field "Subject" HARUS diisi: {{subject}} (Supaya subjek yang kita set disini muncul)
       // 4. Isi pesan (Content) harus mengandung: {{message}}
-      // 5. PENTING: Di EmailJS, jika Anda mengirim HTML, pastikan template mendukungnya (biasanya {{{message}}} tiga kurung).
       
       const templateParams = {
         to_email: to,               // Variabel ini wajib dipasang di field "To Email" pada Template EmailJS
         to_name: to.split('@')[0],  // Nama penerima
         from_name: appSettings.title, // Nama pengirim
         subject: subject,             // Subjek dinamis
-        message: bodyText,            // HTML Body
+        message: bodyText,            // Plain Text Body
         app_name: appSettings.title
       };
 
@@ -77,64 +76,47 @@ export const emailService = {
       
       triggerToast('error', 'Email Delivery Failed', "Could not send email automatically. Opening your default mail app instead.");
       
-      // Fallback: Buka aplikasi email user (stripping HTML tags for mailto)
-      const plainBody = bodyText.replace(/<[^>]*>?/gm, '');
-      emailService.openMailClient(to, subject, plainBody);
+      // Fallback: Buka aplikasi email user
+      emailService.openMailClient(to, subject, bodyText);
     }
   },
 
   sendInvite: (email: string, name: string, inviteLink: string, appSettings: AppSettings) => {
-    // SUBJEK DIUBAH DISINI (Invitation & Account Activation)
     const subject = `Welcome to ${appSettings.title} - Activate Your Account`;
     
-    // HTML TEMPLATE FOR BUTTON
-    const body = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1e293b;">Welcome to ${appSettings.title}</h2>
-        <p style="color: #475569; font-size: 16px;">Hi <strong>${name}</strong>,</p>
-        <p style="color: #475569; font-size: 16px;">You have been invited to join the <strong>${appSettings.title}</strong> workspace.</p>
-        <p style="color: #475569; font-size: 16px;">To activate your account and set your password, please click the button below:</p>
-        
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="${inviteLink}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block;">Activate Account</a>
-        </div>
-        
-        <p style="color: #94a3b8; font-size: 14px; margin-top: 30px;">If the button above doesn't work, copy and paste this link into your browser:</p>
-        <p style="color: #94a3b8; font-size: 12px; word-break: break-all;">${inviteLink}</p>
-        
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-        <p style="color: #94a3b8; font-size: 12px;">If you did not expect this invitation, please ignore this email.</p>
-        <p style="color: #1e293b; font-weight: bold;">${appSettings.title} Team</p>
-    </div>
-    `;
+    // PLAIN TEXT TEMPLATE
+    const body = `Welcome to ${appSettings.title}
+
+Hi ${name},
+
+You have been invited to join the ${appSettings.title} workspace.
+
+Please click the link below to set your password and activate your account:
+${inviteLink}
+
+If you did not expect this invitation, please ignore this email.
+
+${appSettings.title} Team`;
 
     emailService.sendEmail(email, subject, body, appSettings);
   },
 
   sendPasswordReset: (email: string, name: string, resetLink: string, appSettings: AppSettings) => {
-    // SUBJEK DIUBAH DISINI (Password Reset)
     const subject = `Reset Password Request - ${appSettings.title}`;
     
-    // HTML TEMPLATE FOR BUTTON
-    const body = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1e293b;">Reset Your Password</h2>
-        <p style="color: #475569; font-size: 16px;">Hi <strong>${name}</strong>,</p>
-        <p style="color: #475569; font-size: 16px;">A password reset was requested for your account at <strong>${appSettings.title}</strong>.</p>
-        <p style="color: #475569; font-size: 16px;">Please click the button below to create a new password:</p>
-        
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetLink}" style="background-color: #f97316; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block;">Reset Password</a>
-        </div>
-        
-        <p style="color: #94a3b8; font-size: 14px; margin-top: 30px;">If the button above doesn't work, copy and paste this link into your browser:</p>
-        <p style="color: #94a3b8; font-size: 12px; word-break: break-all;">${resetLink}</p>
-        
-        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-        <p style="color: #94a3b8; font-size: 12px;">This link is valid for one-time use.</p>
-        <p style="color: #1e293b; font-weight: bold;">${appSettings.title} Team</p>
-    </div>
-    `;
+    // PLAIN TEXT TEMPLATE
+    const body = `Reset Your Password
+
+Hi ${name},
+
+A password reset was requested for your account at ${appSettings.title}.
+
+Please click the link below to create a new password:
+${resetLink}
+
+This link is valid for one-time use.
+
+${appSettings.title} Team`;
 
     emailService.sendEmail(email, subject, body, appSettings);
   },

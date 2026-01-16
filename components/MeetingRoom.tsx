@@ -34,9 +34,80 @@ const ICE_SERVERS = {
   ]
 };
 
+// --- HELPER COMPONENT: LOCAL VIDEO ---
+const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true; // Always mute local
+    }
+  }, [stream]);
+
+  return (
+    <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group ring-2 ring-blue-500/50">
+        <video 
+            ref={videoRef} 
+            autoPlay 
+            muted 
+            playsInline 
+            className={`w-full h-full object-cover transition-transform duration-300 ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`} 
+        />
+        
+        {isVideoOff && !isScreenSharing && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl">
+                    {user.name.charAt(0)}
+                </div>
+            </div>
+        )}
+
+        <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 z-10">
+            {user.name} (You)
+            {isMuted && <MicOff className="w-3 h-3 text-red-500" />}
+            {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400" />}
+        </div>
+    </div>
+  );
+};
+
+// --- HELPER COMPONENT: REMOTE VIDEO ---
+const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | undefined, participant: Participant }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+     <div className="relative w-full h-full">
+       {stream ? (
+          <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full h-full object-cover"
+              // Do NOT mute remote videos
+          />
+       ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+              <div className="flex flex-col items-center gap-2">
+                  <div className="w-10 h-10 rounded-full border-2 border-slate-600 border-t-blue-500 animate-spin"></div>
+                  <span className="text-xs text-slate-500">Connecting...</span>
+              </div>
+          </div>
+       )}
+       <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium z-10">
+          {participant.name}
+       </div>
+     </div>
+  );
+};
+
 const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall }) => {
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  
   // Meeting Data
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [isWaiting, setIsWaiting] = useState(true);
@@ -44,13 +115,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // Streams & WebRTC
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  // Refs for cleanup (closure safe)
+  const webcamStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
-  const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
   
-  // Map of Remote Streams: userId -> MediaStream
+  const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   
-  // WebRTC Refs
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
 
@@ -65,7 +136,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(MOCK_CHAT);
   const [newMessage, setNewMessage] = useState('');
 
-  // --- 1. INITIALIZATION & CHECK MEETING ---
+  // --- 1. INITIALIZATION ---
   useEffect(() => {
     const initMeeting = async () => {
       const meetings = await storageService.getMeetings();
@@ -76,7 +147,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         let shouldWait = false;
         if (found.status !== 'live') {
-           // Simplified check: if not live, check dates roughly
            if (found.date !== 'Today' && found.date !== 'Tomorrow') {
              const parsed = new Date(found.date);
              if (!isNaN(parsed.getTime()) && parsed > new Date()) shouldWait = true;
@@ -85,7 +155,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         setIsWaiting(shouldWait);
         
         if (!shouldWait) {
-          // Immediately start webcam when confirmed live
           startWebcam();
         }
       } else {
@@ -95,29 +164,24 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     initMeeting();
 
-    // Safety cleanup on unmount
     return () => {
       handleCleanup();
     };
   }, [meetingId]);
 
-  // --- 2. WEBRTC SIGNALING SETUP ---
+  // --- 2. WEBRTC SETUP ---
   useEffect(() => {
     if (isWaiting || !webcamStream) return;
 
     const setupRealtime = async () => {
-      // A. Join DB Presence
       await storageService.joinMeetingRoom(meetingId, user);
 
-      // B. Subscribe to Signaling
       const channel = storageService.subscribeToMeeting(
         meetingId,
         (participants) => {
-          // Filter out self
           const others = participants.filter(p => p.user_id !== user.id);
           setActiveParticipants(others);
           
-          // Cleanup connections for users who left
           const currentIds = others.map(p => p.user_id);
           peerConnections.current.forEach((_, id) => {
             if (!currentIds.includes(id)) {
@@ -131,8 +195,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       channelRef.current = channel;
       setLoading(false);
 
-      // C. Broadcast "I am here" to trigger connections
-      // Delay slightly to ensure socket is ready
       setTimeout(() => {
         storageService.sendSignal(channel, { type: 'ready', from: user.id });
       }, 1000);
@@ -143,37 +205,23 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => {
       channelRef.current?.unsubscribe();
     };
-  }, [isWaiting, webcamStream]); // Only run when stream becomes available
+  }, [isWaiting, webcamStream]); 
 
-  // --- 3. FORCE VIDEO BINDING (FIX FOR "Video tidak muncul") ---
-  // This ensures that even if React re-renders the grid, the video tag gets the stream back.
-  useEffect(() => {
-    if (localVideoRef.current && webcamStream) {
-      localVideoRef.current.srcObject = webcamStream;
-      localVideoRef.current.muted = true; // Always mute local video to prevent echo
-    }
-  }, [webcamStream, activeParticipants, isScreenSharing]); 
-  // Dependency on 'activeParticipants' ensures we re-bind if layout changes
-
-  // --- WEBRTC CORE FUNCTIONS ---
-
+  // --- WEBRTC CORE ---
   const createPeerConnection = (targetUserId: string) => {
-    // Prevent duplicate connections
     if (peerConnections.current.has(targetUserId)) {
         return peerConnections.current.get(targetUserId);
     }
 
-    console.log(`Creating connection to ${targetUserId}`);
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Add Local Tracks (Audio/Video)
-    if (webcamStream) {
-      webcamStream.getTracks().forEach(track => {
-        pc.addTrack(track, webcamStream);
+    // Use REF here to ensure we get current stream tracks
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, webcamStreamRef.current!);
       });
     }
 
-    // ICE Candidates (Network Path Discovery)
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
         storageService.sendSignal(channelRef.current, {
@@ -185,19 +233,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       }
     };
 
-    // Handle Incoming Remote Stream
     pc.ontrack = (event) => {
-      console.log(`Got remote track from ${targetUserId}`);
       const remoteStream = event.streams[0];
       setRemoteStreams(prev => new Map(prev).set(targetUserId, remoteStream));
-    };
-
-    // Connection State Monitoring (Optional Debugging)
-    pc.onconnectionstatechange = () => {
-        console.log(`Connection to ${targetUserId}: ${pc.connectionState}`);
-        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-            closePeerConnection(targetUserId);
-        }
     };
 
     peerConnections.current.set(targetUserId, pc);
@@ -228,7 +266,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     try {
         switch (type) {
         case 'ready':
-            // Someone joined. I call them.
             {
             const pc = createPeerConnection(from)!;
             const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
@@ -236,9 +273,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             storageService.sendSignal(channel, { type: 'offer', sdp: offer, from: user.id, to: from });
             }
             break;
-
         case 'offer':
-            // I'm being called. I answer.
             {
             const pc = createPeerConnection(from)!;
             await pc.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -247,23 +282,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             storageService.sendSignal(channel, { type: 'answer', sdp: answer, from: user.id, to: from });
             }
             break;
-
         case 'answer':
-            // They answered my call.
             {
             const pc = peerConnections.current.get(from);
-            if (pc) {
-                await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-            }
+            if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp));
             }
             break;
-
         case 'candidate':
             {
             const pc = peerConnections.current.get(from);
-            if (pc && candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(candidate));
-            }
+            if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
             }
             break;
         }
@@ -272,13 +300,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
-  // --- MEDIA CONTROLS ---
-
+  // --- MEDIA ---
   const startWebcam = async () => {
     try {
-      // Stop existing tracks if any
-      if (webcamStream) {
-         webcamStream.getTracks().forEach(t => t.stop());
+      if (webcamStreamRef.current) {
+         webcamStreamRef.current.getTracks().forEach(t => t.stop());
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -286,7 +312,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         audio: true 
       });
       
-      setWebcamStream(stream);
+      webcamStreamRef.current = stream; // Update ref for cleanup
+      setWebcamStream(stream); // Update state for UI
       setPermissionError(false);
       setLoading(false);
     } catch (err) {
@@ -297,8 +324,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const toggleMute = () => {
-    if (webcamStream) {
-      webcamStream.getAudioTracks().forEach(track => {
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getAudioTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsMuted(prev => !prev);
@@ -306,72 +333,60 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const toggleVideo = () => {
-    if (webcamStream) {
-      webcamStream.getVideoTracks().forEach(track => {
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getVideoTracks().forEach(track => {
         track.enabled = !track.enabled;
       });
       setIsVideoOff(prev => !prev);
     }
   };
 
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+       // Stop Share
+       screenStreamRef.current?.getTracks().forEach(t => t.stop());
+       screenStreamRef.current = null;
+       setIsScreenSharing(false);
+       // Re-enable webcam tracks in peer connections? 
+       // For simplicity in this mock, we just switch local view back to webcam
+    } else {
+       try {
+         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+         screenStreamRef.current = stream;
+         setIsScreenSharing(true);
+         // Note: Real implementation would replace tracks in RTCPeerConnection here
+         stream.getVideoTracks()[0].onended = () => {
+            setIsScreenSharing(false);
+            screenStreamRef.current = null;
+         };
+       } catch (e) { console.error(e); }
+    }
+  };
+
   const handleCleanup = async () => {
-    // 1. Stop all local tracks
-    webcamStream?.getTracks().forEach(track => track.stop());
+    // Use refs to ensure we clean up what is currently active
+    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     screenStreamRef.current?.getTracks().forEach(track => track.stop());
     
-    // 2. Close all P2P connections
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
-    
-    // 3. Unsubscribe from Supabase
     channelRef.current?.unsubscribe();
 
-    // 4. Remove from DB
-    await storageService.leaveMeetingRoom(meetingId, user.id);
+    // Perform DB cleanup
+    try {
+      await storageService.leaveMeetingRoom(meetingId, user.id);
+    } catch (e) { console.error("Error leaving room:", e); }
   };
 
   const handleLeave = async () => {
-    // Optimistic UI update: Switch view immediately
+    // 1. Stop media immediately for visual feedback
+    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
+    
+    // 2. Trigger UI change immediately
     onEndCall();
-    // Clean up in background
+    
+    // 3. Cleanup DB in background (best effort)
     await handleCleanup();
-  };
-
-  // --- HELPER COMPONENT FOR REMOTE VIDEO ---
-  // Extracted to manage its own ref binding
-  const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | undefined, participant: Participant }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-
-    useEffect(() => {
-      if (videoRef.current && stream) {
-        videoRef.current.srcObject = stream;
-      }
-    }, [stream]);
-
-    return (
-       <div className="relative w-full h-full">
-         {stream ? (
-            <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                className="w-full h-full object-cover"
-                // Do NOT mute remote videos
-            />
-         ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-                <div className="flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-full border-2 border-slate-600 border-t-blue-500 animate-spin"></div>
-                    <span className="text-xs text-slate-500">Connecting...</span>
-                </div>
-            </div>
-         )}
-         {/* If video stream exists but is black/loading, or just as overlay */}
-         <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium z-10">
-            {participant.name}
-         </div>
-       </div>
-    );
   };
 
   // --- RENDER ---
@@ -392,10 +407,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
      )
   }
 
+  // Determine which stream to show locally
+  const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
+
   return (
     <div className="flex h-screen w-full bg-slate-950 overflow-hidden">
       <div className="flex-1 flex flex-col h-full relative">
-        {/* Floating Header */}
+        {/* Header */}
         <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
           <div className="bg-slate-900/80 backdrop-blur-md p-2 md:p-3 rounded-xl border border-slate-800 pointer-events-auto shadow-lg max-w-[60%]">
              <div className="flex items-center gap-3">
@@ -418,7 +436,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                 <div className="text-center p-6 bg-slate-900 border border-slate-800 rounded-2xl max-w-sm">
                   <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><VideoOff className="w-8 h-8" /></div>
                   <h3 className="text-white text-xl font-bold">Camera Blocked</h3>
-                  <p className="text-slate-400 mt-2 text-sm mb-4">Please allow camera and microphone access in your browser settings to join the call.</p>
+                  <p className="text-slate-400 mt-2 text-sm mb-4">Please allow camera access.</p>
                   <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg w-full">Try Again</button>
                 </div>
              </div>
@@ -431,29 +449,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            }`}>
               
               {/* Local User */}
-              <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group ring-2 ring-blue-500/50">
-                 {/* Explicitly bind stream in useEffect, but also render video tag here */}
-                 <video 
-                    ref={localVideoRef} 
-                    autoPlay 
-                    muted 
-                    playsInline 
-                    className={`w-full h-full object-cover transition-transform duration-300 ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'}`} 
-                 />
-                 
-                 {/* Camera Off Placeholder */}
-                 {isVideoOff && !isScreenSharing && (
-                   <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-                      <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl">{user.name.charAt(0)}</div>
-                   </div>
-                 )}
-
-                 {/* Status Badge */}
-                 <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium flex items-center gap-2">
-                   {user.name} (You)
-                   {isMuted && <MicOff className="w-3 h-3 text-red-500" />}
-                 </div>
-              </div>
+              <LocalVideoPlayer 
+                 stream={localStreamDisplay}
+                 isMuted={isMuted}
+                 isVideoOff={isVideoOff}
+                 isScreenSharing={isScreenSharing}
+                 user={user}
+              />
 
               {/* Remote Participants */}
               {activeParticipants.map((p) => (
@@ -467,9 +469,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            </div>
         </div>
 
-        {/* Controls Bar */}
+        {/* Controls */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20 w-[95%] max-w-fit">
-          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 md:px-6 md:py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-2 md:gap-4 transition-all hover:border-slate-600">
+          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 md:px-6 md:py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-2 md:gap-4 transition-all">
              
              <button onClick={toggleMute} className={`p-3.5 rounded-xl transition-all duration-200 ${isMuted ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                 {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
@@ -477,6 +479,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
              
              <button onClick={toggleVideo} className={`p-3.5 rounded-xl transition-all duration-200 ${isVideoOff ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                 {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+             </button>
+
+             <button onClick={toggleScreenShare} className={`p-3.5 rounded-xl transition-all duration-200 hidden sm:block ${isScreenSharing ? 'bg-green-600 text-white shadow-lg shadow-green-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
+                <MonitorUp className="w-5 h-5" />
              </button>
 
              <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>

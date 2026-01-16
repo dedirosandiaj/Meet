@@ -1,4 +1,4 @@
-import { User, Meeting, UserRole } from '../types';
+import { User, Meeting, UserRole, Participant } from '../types';
 import { supabase } from './supabaseClient';
 
 const SESSION_KEY = 'zoomclone_session';
@@ -6,10 +6,8 @@ const SESSION_KEY = 'zoomclone_session';
 export const storageService = {
   // --- AUTHENTICATION & SESSION ---
   
-  // NOTE: This now returns a Promise
   login: async (email: string, passwordAttempt: string): Promise<User | null> => {
     try {
-      // Simple row lookup (Not using Supabase Auth for this demo to keep logic similar to previous version)
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -42,7 +40,7 @@ export const storageService = {
     return session ? JSON.parse(session) : null;
   },
 
-  // --- MEETINGS OPERATIONS (SUPABASE) ---
+  // --- MEETINGS OPERATIONS ---
 
   getMeetings: async (): Promise<Meeting[]> => {
     const { data, error } = await supabase
@@ -91,45 +89,89 @@ export const storageService = {
     return storageService.getMeetings();
   },
 
-  // --- USERS OPERATIONS (SUPABASE) ---
+  // --- REALTIME PARTICIPANTS OPERATIONS ---
+
+  // User enters the room
+  joinMeetingRoom: async (meetingId: string, user: User) => {
+    // Check if already in to prevent duplicates
+    const { data } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .eq('user_id', user.id);
+    
+    if (data && data.length > 0) return;
+
+    await supabase.from('participants').insert([{
+      meeting_id: meetingId,
+      user_id: user.id,
+      name: user.name,
+      avatar: user.avatar,
+      role: user.role
+    }]);
+  },
+
+  // User leaves the room
+  leaveMeetingRoom: async (meetingId: string, userId: string) => {
+    await supabase
+      .from('participants')
+      .delete()
+      .eq('meeting_id', meetingId)
+      .eq('user_id', userId);
+  },
+
+  // Get current list
+  getParticipants: async (meetingId: string): Promise<Participant[]> => {
+    const { data } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('meeting_id', meetingId);
+    return (data as Participant[]) || [];
+  },
+
+  // Subscribe to changes
+  subscribeToParticipants: (meetingId: string, callback: (participants: Participant[]) => void) => {
+    // Initial fetch
+    storageService.getParticipants(meetingId).then(callback);
+
+    // Subscribe
+    const channel = supabase
+      .channel('public:participants')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` },
+        async () => {
+          // Simplest way: re-fetch all on any change to ensure sync
+          const updated = await storageService.getParticipants(meetingId);
+          callback(updated);
+        }
+      )
+      .subscribe();
+
+    return channel;
+  },
+
+  // --- USERS OPERATIONS ---
 
   getUsers: async (): Promise<User[]> => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*');
-    
+    const { data, error } = await supabase.from('users').select('*');
     if (error) return [];
     return (data as User[]) || [];
   },
 
   getUserById: async (id: string): Promise<User | undefined> => {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
+    const { data } = await supabase.from('users').select('*').eq('id', id).single();
     return data || undefined;
   },
 
   getUserByToken: async (token: string): Promise<User | undefined> => {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .eq('token', token)
-      .single();
-    
+    const { data } = await supabase.from('users').select('*').eq('token', token).single();
     return data || undefined;
   },
 
   generateUserToken: async (userId: string): Promise<string | null> => {
     const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-    
-    const { error } = await supabase
-      .from('users')
-      .update({ token: newToken })
-      .eq('id', userId);
-
+    const { error } = await supabase.from('users').update({ token: newToken }).eq('id', userId);
     if (error) return null;
     return newToken;
   },
@@ -146,31 +188,19 @@ export const storageService = {
       token: Math.random().toString(36).substring(2, 15)
     };
 
-    const { error } = await supabase
-      .from('users')
-      .insert([newUser]);
-
-    if (error) {
-      console.error("Error adding user:", error);
-      return null;
-    }
+    const { error } = await supabase.from('users').insert([newUser]);
+    if (error) return null;
     return newUser;
   },
 
   setUserPassword: async (id: string, newPassword: string): Promise<User | null> => {
-    // 1. Update password
     const { error } = await supabase
       .from('users')
-      .update({ 
-        password: newPassword, 
-        status: 'active', 
-        token: null 
-      })
+      .update({ password: newPassword, status: 'active', token: null })
       .eq('id', id);
 
     if (error) return null;
 
-    // 2. Fetch updated user
     const updatedUser = await storageService.getUserById(id);
     if (updatedUser) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(updatedUser));

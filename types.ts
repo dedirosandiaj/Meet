@@ -10,8 +10,8 @@ export interface User {
   role: UserRole;
   avatar: string;
   status: 'active' | 'pending';
-  password?: string; // For mock auth simulation
-  token?: string; // Security token for setup/reset links
+  password?: string;
+  token?: string;
 }
 
 export interface Meeting {
@@ -30,6 +30,16 @@ export interface ChatMessage {
   text: string;
   time: string;
   isSelf: boolean;
+}
+
+// New Interface for Realtime Participants
+export interface Participant {
+  id: string; // Database Row ID
+  meeting_id: string;
+  user_id: string;
+  name: string;
+  avatar: string;
+  role: string;
 }
 
 export type AppView = 'LOGIN' | 'DASHBOARD' | 'MEETING' | 'SET_PASSWORD';

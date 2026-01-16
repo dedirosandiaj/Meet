@@ -14,9 +14,13 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 export const googleDriveService = {
   isInitialized: false,
-  tokenClient: null as any,
 
   initClient: async (): Promise<boolean> => {
+    // If already initialized, just return true
+    if (googleDriveService.isInitialized && window.gapi?.auth2?.getAuthInstance()) {
+        return true;
+    }
+
     console.log("Google Drive Service: Initializing...");
     
     // 1. Fetch Credentials from App Settings
@@ -40,14 +44,15 @@ export const googleDriveService = {
                     clientId: settings.googleDriveClientId,
                     discoveryDocs: DISCOVERY_DOCS,
                     scope: SCOPES,
-                    plugin_name: "ZoomClone" // Required for some GAPI versions
+                    plugin_name: "ZoomClone" // Prevents some origin mismatch errors
                 });
                 
                 googleDriveService.isInitialized = true;
                 console.log("Google Drive Service: GAPI Initialized.");
                 resolve(true);
-            } catch (error) {
+            } catch (error: any) {
                 console.error("Error initializing GAPI client", error);
+                if (error.details) console.error(error.details);
                 resolve(false);
             }
         });
@@ -57,7 +62,10 @@ export const googleDriveService = {
   signIn: async (): Promise<boolean> => {
     if (!googleDriveService.isInitialized) {
         const success = await googleDriveService.initClient();
-        if (!success) return false;
+        if (!success) {
+            console.error("Sign-in aborted: Initialization failed.");
+            return false;
+        }
     }
 
     const GoogleAuth = window.gapi.auth2.getAuthInstance();
@@ -69,20 +77,30 @@ export const googleDriveService = {
             await GoogleAuth.signIn();
             return true;
         } catch (error) {
-            console.error("Sign in error", error);
+            console.error("Sign in error/cancelled", error);
             return false;
         }
     }
   },
 
   uploadVideo: async (blob: Blob, filename: string): Promise<string> => {
-    // Ensure signed in
+    // Ensure signed in - This calls signIn internally, but ideally signIn should be called 
+    // before any async operation to avoid popup blockers.
     const signedIn = await googleDriveService.signIn();
     if (!signedIn) throw new Error("User not signed in to Google.");
 
     console.log(`Google Drive Service: Uploading ${filename}...`);
 
-    const accessToken = window.gapi.auth.getToken().access_token;
+    // ROBUST TOKEN RETRIEVAL
+    // gapi.auth.getToken() is legacy. We use auth2 instance.
+    const authInstance = window.gapi.auth2.getAuthInstance();
+    const currentUser = authInstance.currentUser.get();
+    const authResponse = currentUser.getAuthResponse(true); // true = force refresh if needed
+    const accessToken = authResponse?.access_token;
+
+    if (!accessToken) {
+        throw new Error("Could not retrieve valid Google Access Token.");
+    }
     
     const metadata = {
         name: filename,
@@ -104,7 +122,7 @@ export const googleDriveService = {
         if (data.error) throw new Error(data.error.message);
         
         console.log("Upload Success:", data);
-        return data.webViewLink; // Returns the link to view the file on Drive
+        return data.webViewLink;
     } catch (error) {
         console.error("Upload Error:", error);
         throw error;

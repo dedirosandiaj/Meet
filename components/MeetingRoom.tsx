@@ -25,7 +25,8 @@ import {
   Pin,
   PinOff,
   CircleDot,
-  HardDrive
+  HardDrive,
+  AlertTriangle
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -693,6 +694,18 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const handleLeave = async () => {
+    // CRITICAL FIX: If we need to upload later, we must trigger the sign-in popup NOW.
+    // Popup blockers block window.open() inside async callbacks (like after the recording stop wait).
+    if (isRecording) {
+        try {
+            // Attempt to initialize & sign in immediately upon click
+            await googleDriveService.initClient();
+            await googleDriveService.signIn();
+        } catch (e) {
+            console.warn("Pre-signin failed (possibly popup blocked or config missing):", e);
+        }
+    }
+
     setIsLeaving(true);
 
     const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
@@ -715,23 +728,22 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         // --- GOOGLE DRIVE UPLOAD ---
         try {
-            await googleDriveService.initClient(); // Init logic
-            // In a real app, you'd trigger a sign-in flow here if not signed in
-            // await googleDriveService.signIn(); 
             const link = await googleDriveService.uploadVideo(blob, filename);
+            console.log("Uploaded/Saved to: ", link);
+        } catch (e: any) {
+            console.error("Upload failed", e);
+            let errMsg = "Failed to upload to Drive. Saving locally instead.";
+            if (e.message?.includes("User not signed in")) errMsg = "Not signed in to Google. Saving locally.";
+            if (e.message?.includes("popup")) errMsg = "Popup blocked. Saving locally.";
+            alert(errMsg);
             
-            // Allow download locally as backup since we are in "Preview" mode without real keys
+            // Allow download locally as backup
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = filename;
             a.click();
             URL.revokeObjectURL(url);
-            
-            console.log("Uploaded/Saved to: ", link);
-        } catch (e) {
-            console.error("Upload failed", e);
-            alert("Failed to upload to Drive. Saving locally instead.");
         } finally {
             setIsUploading(false);
         }
@@ -762,7 +774,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           </div>
           <div className="text-center">
              <h2 className="text-2xl font-bold mb-2">Saving Recording...</h2>
-             <p className="text-slate-400">Uploading to Google Drive & Saving Backup</p>
+             <p className="text-slate-400">Uploading to Google Drive...</p>
           </div>
       </div>
   );

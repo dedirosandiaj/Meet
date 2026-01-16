@@ -58,11 +58,12 @@ export const storageService = {
 
     if (data) {
       const settings = { title: data.title, iconUrl: data.icon_url };
+      // Cache to local storage
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       return settings;
     }
 
-    // 2. Fallback to LocalStorage
+    // 2. Fallback to LocalStorage if DB is empty or unreachable
     const local = localStorage.getItem(SETTINGS_KEY);
     if (local) return JSON.parse(local);
 
@@ -74,8 +75,7 @@ export const storageService = {
     // Save to LocalStorage immediately for instant UI feedback
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 
-    // Upsert to Supabase (Assuming table app_settings exists with id=1)
-    // We use a fixed ID '1' to ensure we only have one config row
+    // Upsert to Supabase (We use fixed ID 1 for the global config)
     const { error } = await supabase
       .from('app_settings')
       .upsert({ 

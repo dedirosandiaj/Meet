@@ -12,10 +12,6 @@ import {
   Users, 
   Send,
   X,
-  Clock,
-  ArrowLeft,
-  Hourglass,
-  Calendar,
   MonitorUp,
   PhoneOff
 } from 'lucide-react';
@@ -90,7 +86,6 @@ const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | unde
               autoPlay 
               playsInline 
               className="w-full h-full object-cover"
-              // Do NOT mute remote videos
           />
        ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
@@ -115,7 +110,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // Streams & WebRTC
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
-  // Refs for cleanup (closure safe)
   const webcamStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   
@@ -124,6 +118,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  
+  // Clean up guard
+  const isCleaningUp = useRef(false);
 
   // States
   const [isMuted, setIsMuted] = useState(false);
@@ -165,7 +162,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     initMeeting();
 
     return () => {
-      handleCleanup();
+      // Cleanup on Unmount (e.g. Back button, or view change)
+      performCleanup();
     };
   }, [meetingId]);
 
@@ -215,7 +213,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Use REF here to ensure we get current stream tracks
     if (webcamStreamRef.current) {
       webcamStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, webcamStreamRef.current!);
@@ -312,8 +309,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         audio: true 
       });
       
-      webcamStreamRef.current = stream; // Update ref for cleanup
-      setWebcamStream(stream); // Update state for UI
+      webcamStreamRef.current = stream; 
+      setWebcamStream(stream); 
       setPermissionError(false);
       setLoading(false);
     } catch (err) {
@@ -343,18 +340,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-       // Stop Share
        screenStreamRef.current?.getTracks().forEach(t => t.stop());
        screenStreamRef.current = null;
        setIsScreenSharing(false);
-       // Re-enable webcam tracks in peer connections? 
-       // For simplicity in this mock, we just switch local view back to webcam
     } else {
        try {
          const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
          screenStreamRef.current = stream;
          setIsScreenSharing(true);
-         // Note: Real implementation would replace tracks in RTCPeerConnection here
          stream.getVideoTracks()[0].onended = () => {
             setIsScreenSharing(false);
             screenStreamRef.current = null;
@@ -363,30 +356,32 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
-  const handleCleanup = async () => {
-    // Use refs to ensure we clean up what is currently active
+  // --- CLEANUP ---
+  const performCleanup = () => {
+    if (isCleaningUp.current) return;
+    isCleaningUp.current = true;
+
+    // 1. Stop Tracks
     webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     screenStreamRef.current?.getTracks().forEach(track => track.stop());
     
+    // 2. Close Peer Connections
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
+    
+    // 3. Unsubscribe Supabase
     channelRef.current?.unsubscribe();
 
-    // Perform DB cleanup
-    try {
-      await storageService.leaveMeetingRoom(meetingId, user.id);
-    } catch (e) { console.error("Error leaving room:", e); }
+    // 4. Leave DB (Fire & Forget)
+    storageService.leaveMeetingRoom(meetingId, user.id).catch(err => console.error(err));
   };
 
-  const handleLeave = async () => {
-    // 1. Stop media immediately for visual feedback
-    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
-    
-    // 2. Trigger UI change immediately
+  const handleLeave = () => {
+    // 1. Trigger UI Unmount immediately
     onEndCall();
-    
-    // 3. Cleanup DB in background (best effort)
-    await handleCleanup();
+    // 2. Cleanup will happen via useEffect return, 
+    // but we can also stop tracks here for immediate effect
+    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
   };
 
   // --- RENDER ---
@@ -407,7 +402,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
      )
   }
 
-  // Determine which stream to show locally
   const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
 
   return (

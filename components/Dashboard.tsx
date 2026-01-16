@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, Meeting, AppSettings } from '../types';
 import { storageService } from '../services/storage';
 import { 
@@ -26,7 +26,9 @@ import {
   MoreVertical,
   Save,
   Globe,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Upload,
+  RefreshCw
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -115,6 +117,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSavedSuccess, setSettingsSavedSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- ROUTING EFFECT ---
   // Listen for popstate (Browser Back/Forward buttons)
@@ -203,6 +206,59 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     } finally {
         setIsSavingSettings(false);
     }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Limit to 2MB
+    if (file.size > 2 * 1024 * 1024) {
+        alert("Image too large. Please select an image under 2MB.");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+            // Resize image to max 192x192 for performance
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const maxSize = 192;
+            
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            ctx?.drawImage(img, 0, 0, width, height);
+            
+            // Convert to Base64
+            const dataUrl = canvas.toDataURL('image/png', 0.8);
+            setSettingsForm(prev => ({ ...prev, iconUrl: dataUrl }));
+        };
+        if (event.target?.result) {
+            img.src = event.target.result as string;
+        }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleTriggerUpload = () => {
+      fileInputRef.current?.click();
   };
 
   // Meeting Actions
@@ -782,28 +838,71 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                         {/* Icon Section */}
                         <div className="space-y-4">
                              <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                                <ImageIcon className="w-4 h-4" /> Icon URL (Favicon & Logo)
+                                <ImageIcon className="w-4 h-4" /> Icon (Favicon & Logo)
                             </label>
-                            <div className="flex flex-col md:flex-row gap-6">
-                                <div className="flex-1">
-                                    <input 
-                                        type="url" 
-                                        value={settingsForm.iconUrl}
-                                        onChange={(e) => setSettingsForm({...settingsForm, iconUrl: e.target.value})}
-                                        className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all mb-2"
-                                        placeholder="https://example.com/logo.png"
-                                        required
-                                    />
-                                    <p className="text-xs text-slate-500">Enter a direct link to a PNG or ICO file.</p>
-                                </div>
-                                <div className="shrink-0 flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-xl w-24 h-24">
-                                     <img 
-                                        src={settingsForm.iconUrl || 'https://via.placeholder.com/64'} 
-                                        alt="Preview" 
-                                        className="w-10 h-10 object-contain mb-2" 
-                                        onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}}
-                                     />
-                                     <span className="text-[10px] text-slate-500">Preview</span>
+                            
+                            <div className="flex flex-col gap-4">
+                                {/* Hidden File Input */}
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    onChange={handleImageUpload} 
+                                    accept="image/*" 
+                                    className="hidden" 
+                                />
+
+                                <div className="flex flex-col md:flex-row gap-6">
+                                    <div className="flex-1 space-y-3">
+                                        <div className="flex gap-2">
+                                            <div className="relative flex-1">
+                                                <input 
+                                                    type="url" 
+                                                    value={settingsForm.iconUrl}
+                                                    onChange={(e) => setSettingsForm({...settingsForm, iconUrl: e.target.value})}
+                                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all pr-12"
+                                                    placeholder="https://example.com/logo.png"
+                                                />
+                                                <div className="absolute right-3 top-3.5 text-slate-500 pointer-events-none">
+                                                    <LinkIcon className="w-5 h-5" />
+                                                </div>
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                onClick={handleTriggerUpload}
+                                                className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 rounded-xl transition-colors flex items-center gap-2 font-medium"
+                                            >
+                                                <Upload className="w-5 h-5" />
+                                                <span className="hidden sm:inline">Upload</span>
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            Paste a URL or upload an image. Uploaded images are compressed and stored securely.
+                                        </p>
+                                    </div>
+
+                                    {/* Preview Box */}
+                                    <div className="shrink-0 flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-xl w-32 h-32 relative group">
+                                         {settingsForm.iconUrl ? (
+                                             <img 
+                                                src={settingsForm.iconUrl} 
+                                                alt="Preview" 
+                                                className="w-16 h-16 object-contain mb-2" 
+                                                onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}}
+                                             />
+                                         ) : (
+                                             <ImageIcon className="w-12 h-12 text-slate-700 mb-2" />
+                                         )}
+                                         <span className="text-[10px] text-slate-500">Preview</span>
+                                         
+                                         {/* Overlay for re-uploading via click */}
+                                         <div 
+                                            onClick={handleTriggerUpload}
+                                            className="absolute inset-0 bg-black/50 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer rounded-xl"
+                                         >
+                                             <RefreshCw className="w-6 h-6 text-white mb-1" />
+                                             <span className="text-[10px] text-white font-medium">Change</span>
+                                         </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

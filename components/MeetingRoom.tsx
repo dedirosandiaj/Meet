@@ -13,7 +13,8 @@ import {
   Send,
   X,
   MonitorUp,
-  PhoneOff
+  PhoneOff,
+  Activity
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -30,9 +31,98 @@ const ICE_SERVERS = {
   ]
 };
 
+// --- CUSTOM HOOK: AUDIO LEVEL VISUALIZER ---
+const useAudioLevel = (stream: MediaStream | null | undefined) => {
+  const [level, setLevel] = useState(0);
+  const animationRef = useRef<number>(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+
+  useEffect(() => {
+    if (!stream) {
+      setLevel(0);
+      return;
+    }
+
+    // Check if stream has audio tracks
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+
+      const audioContext = audioContextRef.current;
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+
+      // Create source
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      sourceRef.current = source;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      const updateLevel = () => {
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Calculate average volume
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        
+        // Normalize to 0-100 range roughly
+        const normalized = Math.min(100, Math.max(0, avg * 2.5));
+        
+        // Only update state if change is significant to reduce renders
+        setLevel(prev => {
+            if (Math.abs(prev - normalized) > 2) return normalized;
+            return prev;
+        });
+
+        animationRef.current = requestAnimationFrame(updateLevel);
+      };
+
+      updateLevel();
+
+      return () => {
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        source.disconnect();
+      };
+    } catch (e) {
+      console.error("Audio Context Error", e);
+    }
+  }, [stream]);
+
+  return level;
+};
+
+// --- HELPER COMPONENT: AUDIO BAR ---
+const AudioIndicator = ({ level }: { level: number }) => {
+    if (level < 5) return null; // Silence threshold
+    
+    // Create 3 bars based on level
+    const h1 = Math.max(4, Math.min(16, level * 0.4));
+    const h2 = Math.max(8, Math.min(24, level * 0.8));
+    const h3 = Math.max(4, Math.min(16, level * 0.5));
+
+    return (
+        <div className="flex items-end gap-0.5 h-6 justify-center">
+            <div className="w-1 bg-green-500 rounded-full transition-all duration-75" style={{ height: `${h1}px` }}></div>
+            <div className="w-1 bg-green-400 rounded-full transition-all duration-75" style={{ height: `${h2}px` }}></div>
+            <div className="w-1 bg-green-500 rounded-full transition-all duration-75" style={{ height: `${h3}px` }}></div>
+        </div>
+    );
+};
+
 // --- HELPER COMPONENT: LOCAL VIDEO ---
 const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioLevel = useAudioLevel(isMuted ? null : stream);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -42,7 +132,7 @@ const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }
   }, [stream]);
 
   return (
-    <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group ring-2 ring-blue-500/50">
+    <div className={`relative aspect-video bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl group transition-all duration-300 ${audioLevel > 10 ? 'border-green-500/50 shadow-green-500/10' : 'border-slate-800'}`}>
         <video 
             ref={videoRef} 
             autoPlay 
@@ -53,24 +143,31 @@ const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user }
         
         {isVideoOff && !isScreenSharing && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl">
-                    {user.name.charAt(0)}
+                <div className="relative">
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-3xl font-bold text-white shadow-xl">
+                        {user.name.charAt(0)}
+                    </div>
+                    {/* Pulsing ring for audio when video is off */}
+                    {audioLevel > 5 && (
+                        <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping"></div>
+                    )}
                 </div>
             </div>
         )}
 
-        <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 z-10">
-            {user.name} (You)
-            {isMuted && <MicOff className="w-3 h-3 text-red-500" />}
-            {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400" />}
+        <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 z-10 max-w-[80%]">
+            <span className="truncate">{user.name} (You)</span>
+            {isMuted ? <MicOff className="w-3 h-3 text-red-500 shrink-0" /> : <AudioIndicator level={audioLevel} />}
+            {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}
         </div>
     </div>
   );
 };
 
 // --- HELPER COMPONENT: REMOTE VIDEO ---
-const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | undefined, participant: Participant }) => {
+const RemoteVideoPlayer = ({ stream, participant, isScreenSharing }: { stream: MediaStream | undefined, participant: Participant, isScreenSharing: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioLevel = useAudioLevel(stream);
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -79,13 +176,13 @@ const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | unde
   }, [stream]);
 
   return (
-     <div className="relative w-full h-full">
+     <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${audioLevel > 10 ? 'border-green-500/50' : 'border-slate-800'}`}>
        {stream ? (
           <video 
               ref={videoRef} 
               autoPlay 
               playsInline 
-              className="w-full h-full object-cover"
+              className={`w-full h-full bg-slate-900 ${isScreenSharing ? 'object-contain' : 'object-cover'}`}
           />
        ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
@@ -95,8 +192,20 @@ const RemoteVideoPlayer = ({ stream, participant }: { stream: MediaStream | unde
               </div>
           </div>
        )}
-       <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium z-10">
-          {participant.name}
+       
+       {/* Audio Visualizer Overlay if Video is off but Audio is on (Simple detection) */}
+       {stream && stream.getVideoTracks().length === 0 && audioLevel > 5 && (
+           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-20 h-20 bg-green-500/10 rounded-full animate-pulse flex items-center justify-center">
+                 <Activity className="w-8 h-8 text-green-500" />
+              </div>
+           </div>
+       )}
+
+       <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-sm font-medium z-10 flex items-center gap-2 max-w-[80%]">
+          <span className="truncate">{participant.name}</span>
+          <AudioIndicator level={audioLevel} />
+          {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}
        </div>
      </div>
   );
@@ -118,6 +227,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [remoteScreenShares, setRemoteScreenShares] = useState<Set<string>>(new Set());
   
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -133,7 +243,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   
   // UI States
   const [showSidebar, setShowSidebar] = useState<'chat' | 'participants' | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(MOCK_CHAT);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
 
   // --- 1. INITIALIZATION ---
@@ -216,9 +326,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    if (webcamStreamRef.current) {
-      webcamStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, webcamStreamRef.current!);
+    // Add local tracks (Camera or Screen)
+    const streamToSend = isScreenSharing && screenStreamRef.current ? screenStreamRef.current : webcamStreamRef.current;
+    
+    if (streamToSend) {
+      streamToSend.getTracks().forEach(track => {
+        pc.addTrack(track, streamToSend);
       });
     }
 
@@ -253,6 +366,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       newMap.delete(targetUserId);
       return newMap;
     });
+    setRemoteScreenShares(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(targetUserId);
+        return newSet;
+    });
   };
 
   const handleSignal = async (signal: any) => {
@@ -262,6 +380,35 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     if (signal.type === 'leave') {
         setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
         closePeerConnection(signal.from);
+        return;
+    }
+
+    // Chat Signal
+    if (signal.type === 'chat') {
+        setChatMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: signal.senderName,
+            text: signal.text,
+            time: formatTime(),
+            isSelf: false
+        }]);
+        if (!showSidebar) {
+             // Optional: Show notification dot logic here
+        }
+        return;
+    }
+
+    // Screen Share Toggle Signal
+    if (signal.type === 'screen-toggle') {
+        setRemoteScreenShares(prev => {
+            const newSet = new Set(prev);
+            if (signal.isSharing) {
+                newSet.add(signal.from);
+            } else {
+                newSet.delete(signal.from);
+            }
+            return newSet;
+        });
         return;
     }
 
@@ -308,6 +455,34 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
+  // --- CHAT ---
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+
+    const msgObj = {
+        id: Date.now().toString(),
+        sender: user.name,
+        text: newMessage,
+        time: formatTime(),
+        isSelf: true
+    };
+
+    // Update Local
+    setChatMessages(prev => [...prev, msgObj]);
+    setNewMessage('');
+
+    // Broadcast
+    if (channelRef.current) {
+        storageService.sendSignal(channelRef.current, {
+            type: 'chat',
+            text: msgObj.text,
+            senderName: user.name,
+            from: user.id
+        });
+    }
+  };
+
   // --- MEDIA ---
   const startWebcam = async () => {
     try {
@@ -350,18 +525,62 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   };
 
   const toggleScreenShare = async () => {
+    const channel = channelRef.current;
+    if (!channel) return;
+
     if (isScreenSharing) {
+       // STOP SCREEN SHARE -> Revert to Webcam
        screenStreamRef.current?.getTracks().forEach(t => t.stop());
        screenStreamRef.current = null;
        setIsScreenSharing(false);
+
+       if (webcamStreamRef.current) {
+           const videoTrack = webcamStreamRef.current.getVideoTracks()[0];
+           // Replace track in all peer connections
+           peerConnections.current.forEach((pc) => {
+               const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+               if (sender && videoTrack) {
+                   sender.replaceTrack(videoTrack);
+               }
+           });
+       }
+       
+       // Notify status change
+       storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: false, from: user.id });
+
     } else {
+       // START SCREEN SHARE
        try {
-         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
          screenStreamRef.current = stream;
          setIsScreenSharing(true);
-         stream.getVideoTracks()[0].onended = () => {
-            setIsScreenSharing(false);
-            screenStreamRef.current = null;
+
+         const screenTrack = stream.getVideoTracks()[0];
+         
+         // Replace track in all peer connections
+         peerConnections.current.forEach((pc) => {
+             const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+             if (sender && screenTrack) {
+                 sender.replaceTrack(screenTrack);
+             }
+         });
+
+         // Notify status change
+         storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: true, from: user.id });
+
+         // Handle user clicking "Stop Sharing" on browser UI
+         screenTrack.onended = () => {
+             setIsScreenSharing(false);
+             screenStreamRef.current = null;
+             // Revert to camera
+             if (webcamStreamRef.current) {
+                const camTrack = webcamStreamRef.current.getVideoTracks()[0];
+                peerConnections.current.forEach((pc) => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender && camTrack) sender.replaceTrack(camTrack);
+                });
+             }
+             storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: false, from: user.id });
          };
        } catch (e) { console.error(e); }
     }
@@ -484,6 +703,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                     <RemoteVideoPlayer 
                         stream={remoteStreams.get(p.user_id)} 
                         participant={p}
+                        isScreenSharing={remoteScreenShares.has(p.user_id)}
                     />
                  </div>
               ))}
@@ -513,8 +733,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                 {activeParticipants.length > 0 && <span className="absolute -top-1 -right-1 bg-green-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{activeParticipants.length + 1}</span>}
              </button>
 
-             <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3.5 rounded-xl transition-all ${showSidebar === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
+             <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3.5 rounded-xl transition-all relative ${showSidebar === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                 <MessageSquare className="w-5 h-5" />
+                {chatMessages.length > 0 && !showSidebar && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-slate-900"></span>}
              </button>
 
              <div className="w-px h-8 bg-slate-700 mx-1"></div>
@@ -538,6 +759,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            {showSidebar === 'chat' && (
              <>
                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 custom-scrollbar">
+                  {chatMessages.length === 0 && <p className="text-center text-slate-500 text-sm mt-10">No messages yet.</p>}
                   {chatMessages.map((msg) => (
                     <div key={msg.id} className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'}`}>
                         <div className="flex items-center gap-2 mb-1">
@@ -550,7 +772,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                     </div>
                   ))}
                </div>
-               <form onSubmit={(e) => { e.preventDefault(); if(!newMessage.trim()) return; setChatMessages([...chatMessages, {id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true}]); setNewMessage(''); }} className="p-4 border-t border-slate-800 bg-slate-900 pb-8 md:pb-4">
+               <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900 pb-8 md:pb-4">
                   <div className="relative">
                     <input type="text" placeholder="Type a message..." className="w-full bg-slate-800 border border-slate-700 rounded-lg py-3 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
                     <button type="submit" className="absolute right-2 top-2 p-1 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"><Send className="w-5 h-5" /></button>
@@ -575,6 +797,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                           <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm text-white font-bold">{p.name.charAt(0)}</div>
                           <div className="flex-1"><p className="text-sm font-medium text-white">{p.name}</p><p className="text-xs text-slate-500">Participant</p></div>
                           <div className="flex gap-2 text-slate-400">
+                             {remoteScreenShares.has(p.user_id) && <MonitorUp className="w-4 h-4 text-green-500" />}
                              {remoteStreams.has(p.user_id) ? <Video className="w-4 h-4 text-green-500" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-white animate-spin"></div>}
                           </div>
                        </div>

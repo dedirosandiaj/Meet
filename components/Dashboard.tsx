@@ -86,6 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const [sendingResetId, setSendingResetId] = useState<string | null>(null);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
   const [isAddingUser, setIsAddingUser] = useState(false); // New loading state for adding user
+  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false); // New loading state for creating/sending emails
 
   // Form States
   const [joinId, setJoinId] = useState('');
@@ -502,25 +503,54 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     setShowInstantModal(true);
   };
 
-  const handleConfirmInstantMeeting = async () => {
-    const today = new Date();
-    const dateStr = today.toISOString().split('T')[0];
-    const id = generateMeetingId();
-    const newMeeting: Meeting = {
-      id: id,
-      title: 'Instant Meeting',
-      date: dateStr, 
-      time: today.getHours().toString().padStart(2, '0') + ':' + today.getMinutes().toString().padStart(2, '0'),
-      host: user.name,
-      participantsCount: 1,
-      status: 'live'
-    };
+  // Helper to send emails to participants
+  const sendMeetingEmails = async (meeting: Meeting, participantIds: string[]) => {
+    if (participantIds.length === 0) return;
     
-    // Pass invited user IDs
-    const updated = await storageService.createMeeting(newMeeting, Array.from(selectedParticipants));
-    setMeetings(updated);
-    setCreatedMeeting(newMeeting);
-    setShowInstantModal(false);
+    // Find full user objects from IDs
+    const usersToEmail = allUsers.filter(u => participantIds.includes(u.id));
+    
+    // Send emails sequentially or in parallel
+    // Using parallel here for speed, though EmailJS has rate limits (be careful with large lists)
+    const emailPromises = usersToEmail.map(u => 
+        emailService.sendMeetingInvite(u.email, u.name, meeting, appSettings)
+    );
+    
+    await Promise.all(emailPromises);
+  };
+
+  const handleConfirmInstantMeeting = async () => {
+    setIsCreatingMeeting(true);
+    try {
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0];
+      const id = generateMeetingId();
+      const newMeeting: Meeting = {
+        id: id,
+        title: 'Instant Meeting',
+        date: dateStr, 
+        time: today.getHours().toString().padStart(2, '0') + ':' + today.getMinutes().toString().padStart(2, '0'),
+        host: user.name,
+        participantsCount: 1,
+        status: 'live'
+      };
+      
+      const participantIds = Array.from(selectedParticipants);
+      
+      // 1. Create in DB
+      const updated = await storageService.createMeeting(newMeeting, participantIds);
+      
+      // 2. Send Emails to invited
+      await sendMeetingEmails(newMeeting, participantIds);
+      
+      setMeetings(updated);
+      setCreatedMeeting(newMeeting);
+      setShowInstantModal(false);
+    } catch (err) {
+      console.error("Failed to create instant meeting", err);
+    } finally {
+      setIsCreatingMeeting(false);
+    }
   };
 
   const handleJoinSubmit = (e: React.FormEvent) => {
@@ -535,24 +565,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scheduleForm.title || !scheduleForm.date || !scheduleForm.time) return;
-    const id = generateMeetingId();
-    const newMeeting: Meeting = {
-      id: id,
-      title: scheduleForm.title,
-      date: scheduleForm.date, 
-      time: scheduleForm.time,
-      host: user.name,
-      participantsCount: 0,
-      status: 'upcoming'
-    };
     
-    // Pass invited user IDs
-    const updated = await storageService.createMeeting(newMeeting, Array.from(selectedParticipants));
-    setMeetings(updated);
-    setShowScheduleModal(false);
-    setScheduleForm({ title: '', date: '', time: '' });
-    setSelectedParticipants(new Set()); // Reset
-    setCreatedMeeting(newMeeting);
+    setIsCreatingMeeting(true);
+    try {
+      const id = generateMeetingId();
+      const newMeeting: Meeting = {
+        id: id,
+        title: scheduleForm.title,
+        date: scheduleForm.date, 
+        time: scheduleForm.time,
+        host: user.name,
+        participantsCount: 0,
+        status: 'upcoming'
+      };
+      
+      const participantIds = Array.from(selectedParticipants);
+      
+      // 1. Create in DB
+      const updated = await storageService.createMeeting(newMeeting, participantIds);
+      
+      // 2. Send Emails
+      await sendMeetingEmails(newMeeting, participantIds);
+
+      setMeetings(updated);
+      setShowScheduleModal(false);
+      setScheduleForm({ title: '', date: '', time: '' });
+      setSelectedParticipants(new Set()); // Reset
+      setCreatedMeeting(newMeeting);
+    } catch (err) {
+      console.error("Failed to schedule meeting", err);
+    } finally {
+      setIsCreatingMeeting(false);
+    }
   };
 
   const handleCloseCreatedModal = (shouldJoin: boolean) => {
@@ -769,7 +813,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
              </div>
              <div className="p-4 border-t border-slate-800 flex justify-end gap-3">
                 <button onClick={() => setShowInstantModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
-                <button onClick={handleConfirmInstantMeeting} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-medium">Start Meeting</button>
+                <button onClick={handleConfirmInstantMeeting} disabled={isCreatingMeeting} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50">
+                    {isCreatingMeeting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Start Meeting
+                </button>
              </div>
           </div>
         </div>
@@ -787,7 +834,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
                     <label className="block text-sm text-slate-400 mb-1">Invite Participants</label>
                     {renderUserSelectionList()}
                 </div>
-                <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg">Save</button></div>
+                <div className="flex justify-end gap-3 pt-2">
+                    <button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
+                    <button type="submit" disabled={isCreatingMeeting} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 disabled:opacity-50">
+                        {isCreatingMeeting && <Loader2 className="w-4 h-4 animate-spin" />}
+                        Save & Invite
+                    </button>
+                </div>
              </form>
           </div>
         </div>

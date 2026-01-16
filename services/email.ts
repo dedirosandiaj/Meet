@@ -1,5 +1,5 @@
 
-import { AppSettings } from '../types';
+import { AppSettings, Meeting } from '../types';
 import emailjs from '@emailjs/browser';
 
 // --- KONFIGURASI EMAILJS ---
@@ -64,7 +64,8 @@ export const emailService = {
         console.log('SUCCESS!', response.status, response.text);
         
         // --- NEW POPUP NOTIFICATION ---
-        triggerToast('success', 'Email Sent Successfully', `Email has been sent to ${to}.\n\nSubject: "${subject}"`);
+        // triggerToast('success', 'Email Sent Successfully', `Email has been sent to ${to}.\n\nSubject: "${subject}"`);
+        // Commented out toast for meeting invites to avoid spamming UI when inviting many people
         
       } else {
         throw new Error(`EmailJS returned status: ${response.status}`);
@@ -85,7 +86,7 @@ export const emailService = {
     const subject = `Welcome to ${appSettings.title} - Activate Your Account`;
     
     // PLAIN TEXT TEMPLATE
-const body = `Welcome to ${appSettings.title}
+    const body = `Welcome to ${appSettings.title}
 
 Hi ${name},
 
@@ -115,6 +116,33 @@ Please click the link below to create a new password:
 ${resetLink}
 
 This link is valid for one-time use.
+
+${appSettings.title} Team`;
+
+    emailService.sendEmail(email, subject, body, appSettings);
+  },
+
+  sendMeetingInvite: (email: string, name: string, meeting: Meeting, appSettings: AppSettings) => {
+    const subject = `Meeting Invitation: ${meeting.title}`;
+    const baseUrl = window.location.origin;
+    const joinUrl = `${baseUrl}/join/${meeting.id}`;
+
+    // PLAIN TEXT TEMPLATE FOR MEETING
+    const body = `Meeting Invitation
+
+Hi ${name},
+
+You have been invited to join a meeting on ${appSettings.title}.
+
+Topic: ${meeting.title}
+Date: ${meeting.date}
+Time: ${meeting.time}
+Meeting ID: ${meeting.id}
+
+Join Link:
+${joinUrl}
+
+Please join at the scheduled time.
 
 ${appSettings.title} Team`;
 

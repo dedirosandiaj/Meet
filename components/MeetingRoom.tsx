@@ -13,26 +13,11 @@ import {
   Users, 
   Send,
   X,
-  MonitorUp,
   PhoneOff,
-  Activity,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Minimize2,
-  RefreshCcw,
-  Scaling,
-  Pin,
-  PinOff,
-  AlertTriangle,
-  ArrowLeft,
-  Calendar,
-  Clock,
   Loader2,
-  Home,
-  UserCheck,
   Lock,
-  RefreshCw
+  RefreshCw,
+  ArrowLeft
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -142,7 +127,7 @@ const RemoteVideoPlayer = ({ stream, participant }: any) => {
   useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
   return (
      <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 transition-all">
-       {stream ? <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center bg-slate-800 text-slate-500 text-xs">Connecting...</div>}
+       {stream ? <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" /> : <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800 text-slate-500"><Loader2 className="w-6 h-6 animate-spin mb-2 text-blue-500" /><span className="text-xs">Connecting...</span></div>}
        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium z-10"><span>{participant.name}</span></div>
      </div>
   );
@@ -160,7 +145,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const channelRef = useRef<RealtimeChannel | null>(null);
+  
+  // WebRTC Refs
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const iceCandidateQueues = useRef<Map<string, RTCIceCandidate[]>>(new Map());
+  
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [showSidebar, setShowSidebar] = useState<'chat' | 'participants' | null>(null);
@@ -176,7 +165,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!found) { setLoading(false); return; }
       setMeeting(found);
 
-      // Register initial state in DB, which determines if we start in waiting room
+      // Register initial state
       const initialStatus = await storageService.joinMeetingRoom(meetingId, user);
       
       // Setup countdown
@@ -185,11 +174,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       const countdownActive = found.status !== 'live' && tDate > new Date();
       setIsWaiting(countdownActive);
 
+      // Ensure webcam is started if we are not in countdown (even if in waiting room)
       if (!countdownActive) {
-          startWebcam(); // Start cam early if not in countdown
+          startWebcam(); 
           
           const isPrivileged = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
-          
           if (initialStatus === 'admitted' || isPrivileged) {
             setIsAdmitted(true);
           }
@@ -200,16 +189,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         meetingId,
         user,
         (allParticipants) => {
-          // This is the single source of truth for participant state
           const me = allParticipants.find(p => p.user_id === user.id);
-          
           if (me) {
-             // If status is undefined (legacy schema), treat as admitted
              const amIAdmitted = !me.status || me.status === 'admitted';
              setIsAdmitted(amIAdmitted);
           }
           
-          // Filter logic: treat missing status as 'admitted'
           setActiveParticipants(allParticipants.filter(p => (!p.status || p.status === 'admitted') && p.user_id !== user.id));
           setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
         },
@@ -224,20 +209,15 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => performCleanup();
   }, [meetingId]);
 
-  // POLLING SAFETY NET: Refresh participants every 5 seconds for Managers (Host/Admin/Member)
-  // This ensures that even if Realtime events miss the "Join" event, the list will eventually update.
+  // POLLING SAFETY NET
   useEffect(() => {
     if (!meeting) return;
-    
     const isHost = meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
     const canManage = isHost || user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
-
     if (!canManage) return;
 
     const interval = setInterval(async () => {
        const allParticipants = await storageService.getParticipants(meetingId);
-       // We only update the lists, we do not touch 'isAdmitted' or 'meeting' state here to avoid flicker
-       // Filter logic must match Realtime callback
        setActiveParticipants(allParticipants.filter(p => (!p.status || p.status === 'admitted') && p.user_id !== user.id));
        setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
     }, 5000);
@@ -245,18 +225,22 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => clearInterval(interval);
   }, [meetingId, meeting, user.role, user.name]);
 
-  // Effect to handle WebRTC signaling once admitted
+  // TRIGGER SIGNALING WHEN ADMITTED
   useEffect(() => {
       if (isAdmitted && !isWaiting && webcamStream) {
-          // Delay slightly to ensure channel is fully established and other peers have received 'refresh-list'
+          // Send 'ready' to announce presence to existing peers
           const timer = setTimeout(() => {
-             if (channelRef.current) {
-                 storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
-             }
-          }, 1500);
+             triggerReadySignal();
+          }, 1000);
           return () => clearTimeout(timer);
       }
   }, [isAdmitted, isWaiting, webcamStream]);
+
+  const triggerReadySignal = () => {
+     if (channelRef.current) {
+         storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
+     }
+  };
 
   const startWebcam = async () => {
     try {
@@ -267,10 +251,21 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const createPeerConnection = (targetUserId: string) => {
     if (peerConnections.current.has(targetUserId)) return peerConnections.current.get(targetUserId);
+    
     const pc = new RTCPeerConnection(ICE_SERVERS);
-    if (webcamStreamRef.current) webcamStreamRef.current.getTracks().forEach(t => pc.addTrack(t, webcamStreamRef.current!));
-    pc.onicecandidate = (e) => { if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: targetUserId, payload: { type: 'candidate', candidate: e.candidate } }); };
-    pc.ontrack = (e) => setRemoteStreams(prev => new Map(prev).set(targetUserId, e.streams[0]));
+    
+    if (webcamStreamRef.current) {
+        webcamStreamRef.current.getTracks().forEach(t => pc.addTrack(t, webcamStreamRef.current!));
+    }
+    
+    pc.onicecandidate = (e) => { 
+        if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: targetUserId, payload: { type: 'candidate', candidate: e.candidate } }); 
+    };
+    
+    pc.ontrack = (e) => {
+        setRemoteStreams(prev => new Map(prev).set(targetUserId, e.streams[0]));
+    };
+    
     peerConnections.current.set(targetUserId, pc);
     return pc;
   };
@@ -283,8 +278,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         return; 
     }
     
-    // All other signals (WebRTC) should only be processed if admitted
-    // We check state directly here to be safe
     if (!isAdmitted) return;
 
     try {
@@ -298,18 +291,45 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           const offer = await pc.createOffer(); 
           await pc.setLocalDescription(offer); 
           storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'offer', sdp: offer } }); 
+        
         } else if (payload.type === 'offer') { 
           const pc = createPeerConnection(from)!; 
           await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
           const ans = await pc.createAnswer(); 
           await pc.setLocalDescription(ans); 
           storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'answer', sdp: ans } }); 
+          
+          // Process any queued candidates
+          const queue = iceCandidateQueues.current.get(from) || [];
+          for (const c of queue) {
+              await pc.addIceCandidate(c).catch(e => console.warn("Failed to add queued candidate", e));
+          }
+          iceCandidateQueues.current.delete(from);
+
         } else if (payload.type === 'answer') { 
           const pc = peerConnections.current.get(from); 
-          if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
+          if (pc) {
+              await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+              // Process queued candidates
+              const queue = iceCandidateQueues.current.get(from) || [];
+              for (const c of queue) {
+                  await pc.addIceCandidate(c).catch(e => console.warn("Failed to add queued candidate", e));
+              }
+              iceCandidateQueues.current.delete(from);
+          }
+
         } else if (payload.type === 'candidate') { 
           const pc = peerConnections.current.get(from); 
-          if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
+          if (pc && candidate) {
+              // Critical Fix: Only add candidate if remote description is set. Otherwise queue it.
+              if (pc.remoteDescription) {
+                  await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn("Error adding candidate", e));
+              } else {
+                  const queue = iceCandidateQueues.current.get(from) || [];
+                  queue.push(new RTCIceCandidate(candidate));
+                  iceCandidateQueues.current.set(from, queue);
+              }
+          }
         }
     } catch (e) {
         console.error("Signal handling error:", e);
@@ -327,7 +347,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleAdmit = async (userId: string) => {
       setSyncing(true);
       await storageService.admitParticipant(meetingId, userId);
-      // We still send the broadcast as a backup, even though postgres_changes handles it
       await storageService.sendSignal(channelRef.current, { type: 'refresh-list' });
       setSyncing(false);
   };
@@ -336,7 +355,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     webcamStreamRef.current?.getTracks().forEach(t => t.stop());
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
-    // Presence will automatically handle leaving when channel is unsubscribed
+    iceCandidateQueues.current.clear();
     if(channelRef.current) {
         channelRef.current.unsubscribe();
     }
@@ -353,11 +372,15 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
       <div className="flex-1 flex flex-col relative">
-        <div className="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-lg">
+        <div className="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-lg flex items-center justify-between gap-4 min-w-[200px]">
            <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center"><Video className="w-4 h-4 text-blue-500" /></div>
               <div><h1 className="font-bold text-white text-sm">{meeting?.title}</h1><p className="text-[10px] text-slate-400">ID: {meetingId}</p></div>
            </div>
+           {/* Manual Reconnect Button */}
+           <button onClick={triggerReadySignal} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Reconnect Video">
+              <RefreshCw className="w-4 h-4" />
+           </button>
         </div>
 
         <div className="flex-1 p-4 pt-20 pb-24 overflow-hidden">

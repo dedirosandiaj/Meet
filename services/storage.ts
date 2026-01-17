@@ -196,7 +196,7 @@ export const storageService = {
   // --- REALTIME PARTICIPANTS & SIGNALING ---
 
   joinMeetingRoom: async (meetingId: string, user: User) => {
-    // Check if entry exists
+    // 1. Check if entry already exists
     const { data: existing } = await supabase
         .from('participants')
         .select('*')
@@ -204,7 +204,20 @@ export const storageService = {
         .eq('user_id', user.id)
         .maybeSingle();
 
-    const initialStatus = user.role === UserRole.CLIENT ? 'waiting' : 'admitted';
+    // 2. Fetch Meeting Info to verify Host
+    // This ensures that if the User is the Host, they are NEVER put in waiting room,
+    // regardless of their Role (e.g. creating Instant Meeting)
+    const { data: meeting } = await supabase
+        .from('meetings')
+        .select('host')
+        .eq('id', meetingId)
+        .maybeSingle();
+
+    const isHost = meeting && meeting.host === user.name;
+    const isStaff = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
+
+    // Logic: If Host OR Staff -> Admitted. If Client -> Waiting (unless Host).
+    const initialStatus = (isHost || isStaff) ? 'admitted' : 'waiting';
 
     if (!existing) {
         await supabase.from('participants').insert({
@@ -216,10 +229,13 @@ export const storageService = {
             status: initialStatus
         });
     } else {
-        // If user exists but status is missing (legacy record), update it
-        // Or if client rejoins and was waiting, ensure they are still waiting (don't override 'admitted')
+        // Fix for legacy data or re-joins:
+        // Update status if it's missing OR if we need to enforce logic on re-entry
         if (!existing.status) {
-            await supabase.from('participants').update({ status: initialStatus }).eq('id', existing.id);
+             await supabase.from('participants').update({ status: initialStatus }).eq('id', existing.id);
+        } else if (existing.status === 'waiting' && (isHost || isStaff)) {
+             // Auto-fix: If a Staff member was accidentally stuck in waiting, admit them on re-join
+             await supabase.from('participants').update({ status: 'admitted' }).eq('id', existing.id);
         }
     }
   },
@@ -289,12 +305,6 @@ export const storageService = {
             event: 'signal',
             payload: signal
         });
-        
-        // If join/leave, we rely on Postgres trigger/changes, 
-        // but explicit fetch trigger via Broadcast can speed up UI reaction if DB is slow
-        if (signal.type === 'leave') {
-            // DB delete handles the participant list update via postgres_changes listener
-        }
     }
   },
 

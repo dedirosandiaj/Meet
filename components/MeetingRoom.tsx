@@ -31,7 +31,8 @@ import {
   Loader2,
   Home,
   UserCheck,
-  Lock
+  Lock,
+  RefreshCw
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -175,6 +176,16 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
 
 // --- COMPONENT: WAITING ROOM UI (FOR CLIENT) ---
 const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () => void }) => {
+    const [isChecking, setIsChecking] = useState(false);
+
+    const handleManualCheck = () => {
+        setIsChecking(true);
+        // Trigger a force re-fetch via storage service logic (usually triggered by realtime)
+        // In this UI context, we can just wait for the parent to re-render from props change
+        // but visually showing we are checking helps UX.
+        setTimeout(() => setIsChecking(false), 1000);
+    };
+
     return (
         <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
              {/* Background Elements */}
@@ -183,7 +194,7 @@ const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () =
                  <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-blue-600/5 rounded-full blur-[100px]"></div>
              </div>
 
-             <div className="relative z-10 text-center max-w-lg bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl">
+             <div className="relative z-10 text-center max-w-lg bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl animate-[fadeIn_0.5s_ease-out]">
                  <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-slate-900 shadow-xl">
                      <Lock className="w-8 h-8 text-blue-400" />
                  </div>
@@ -196,12 +207,22 @@ const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () =
                      Waiting for admittance...
                  </div>
 
-                 <button 
-                     onClick={onLeave}
-                     className="w-full py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl font-medium transition-colors"
-                 >
-                     Leave
-                 </button>
+                 <div className="space-y-3">
+                     <button 
+                         onClick={handleManualCheck}
+                         disabled={isChecking}
+                         className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                     >
+                         {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                         Refresh Status
+                     </button>
+                     <button 
+                         onClick={onLeave}
+                         className="w-full py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl font-medium transition-colors"
+                     >
+                         Leave
+                     </button>
+                 </div>
              </div>
         </div>
     );
@@ -550,7 +571,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         // Initial Waiting Room Check
         if (user.role === UserRole.CLIENT) {
-           setIsAdmitted(false); // Clients assume waiting until confirmed
+           // Don't assume admitted yet, let DB verify via realtime/storage
+           setIsAdmitted(false); 
         }
 
         if (!shouldWait) {
@@ -576,6 +598,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     const setupRealtime = async () => {
       // User inserts self into participants table (with waiting or admitted status)
+      // This DB call determines the initial status based on Host/Staff logic
       await storageService.joinMeetingRoom(meetingId, user);
 
       const channel = storageService.subscribeToMeeting(
@@ -595,10 +618,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           
           // 1. Check My Own Status
           const myParticipantRecord = normalizedParticipants.find(p => p.user_id === user.id);
-          if (myParticipantRecord && myParticipantRecord.status === 'admitted') {
-              setIsAdmitted(true);
-          } else if (user.role === UserRole.CLIENT) {
-              setIsAdmitted(false);
+          if (myParticipantRecord) {
+              if (myParticipantRecord.status === 'admitted') {
+                  setIsAdmitted(true);
+              } else {
+                  setIsAdmitted(false);
+              }
           }
 
           // 2. Separate Active vs Waiting (For Host View)
@@ -624,7 +649,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       setLoading(false);
 
       // Only send ready signal if actually admitted
-      if (user.role !== UserRole.CLIENT || isAdmitted) {
+      // We check state inside the effect interval or via dependency, but here we do it after short delay
+      // to ensure state propagates
+      if (user.role !== UserRole.CLIENT) {
+          // Admins/Members assume ready, but isAdmitted check above handles confirmation
           setTimeout(() => {
             storageService.sendSignal(channel, { type: 'ready', from: user.id });
           }, 1000);

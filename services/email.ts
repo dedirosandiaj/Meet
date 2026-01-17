@@ -56,7 +56,7 @@ const formatForCalendarUrl = (dateStr: string, timeStr: string) => {
     };
 };
 
-const generateCalendarLinks = (meeting: Meeting, joinUrl: string) => {
+const generateCalendarLinksInternal = (meeting: Meeting, joinUrl: string) => {
     const { start, end } = formatForCalendarUrl(meeting.date, meeting.time);
     const title = encodeURIComponent(meeting.title);
     const details = encodeURIComponent(`Join Meeting: ${joinUrl}\n\nMeeting ID: ${meeting.id}`);
@@ -177,7 +177,7 @@ ${appSettings.title} Team`;
     const joinUrl = `${baseUrl}/join/${meeting.id}`;
     
     // Generate Calendar Links
-    const { google, outlook } = generateCalendarLinks(meeting, joinUrl);
+    const { google, outlook } = generateCalendarLinksInternal(meeting, joinUrl);
 
     // PLAIN TEXT TEMPLATE FOR MEETING
     const body = `Meeting Invitation
@@ -209,6 +209,13 @@ Please join at the scheduled time.
 ${appSettings.title} Team`;
 
     return emailService.sendEmail(email, subject, body, appSettings);
+  },
+
+  // --- PUBLIC HELPER: Get Web Links ---
+  getCalendarLinks: (meeting: Meeting) => {
+      const baseUrl = window.location.origin;
+      const joinUrl = `${baseUrl}/join/${meeting.id}`;
+      return generateCalendarLinksInternal(meeting, joinUrl);
   },
 
   // --- NEW: GENERATE & DOWNLOAD ICS FILE ---

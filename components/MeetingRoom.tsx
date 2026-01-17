@@ -188,7 +188,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!countdownActive) {
           startWebcam(); // Start cam early if not in countdown
           
-          // Logic baru: Admin & Member otomatis admitted visualnya.
           const isPrivileged = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
           
           if (initialStatus === 'admitted' || isPrivileged) {
@@ -204,14 +203,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           // This is the single source of truth for participant state
           const me = allParticipants.find(p => p.user_id === user.id);
           
-          // CRITICAL FIX: Only update isAdmitted if we explicitly find the record.
-          // If record is missing (race condition), trust the initialStatus/current state.
           if (me) {
-             const amIAdmitted = me.status === 'admitted';
+             // If status is undefined (legacy schema), treat as admitted
+             const amIAdmitted = !me.status || me.status === 'admitted';
              setIsAdmitted(amIAdmitted);
           }
           
-          setActiveParticipants(allParticipants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+          // Filter logic: treat missing status as 'admitted'
+          setActiveParticipants(allParticipants.filter(p => (!p.status || p.status === 'admitted') && p.user_id !== user.id));
           setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
         },
         (signal) => handleSignal(signal)
@@ -238,7 +237,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     const interval = setInterval(async () => {
        const allParticipants = await storageService.getParticipants(meetingId);
        // We only update the lists, we do not touch 'isAdmitted' or 'meeting' state here to avoid flicker
-       setActiveParticipants(allParticipants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+       // Filter logic must match Realtime callback
+       setActiveParticipants(allParticipants.filter(p => (!p.status || p.status === 'admitted') && p.user_id !== user.id));
        setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
     }, 5000);
 

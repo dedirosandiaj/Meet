@@ -41,7 +41,7 @@ export interface Participant {
   name: string;
   avatar: string;
   role: string;
-  status: 'waiting' | 'admitted'; // New field for Waiting Room
+  status?: 'waiting' | 'admitted'; // Made optional for backward compatibility
 }
 
 export interface AppSettings {

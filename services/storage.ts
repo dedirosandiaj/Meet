@@ -79,8 +79,6 @@ export const storageService = {
   },
 
   createMeeting: async (meeting: Meeting, invitedUserIds: string[] = []): Promise<Meeting[]> => {
-    // CRITICAL FIX: Throw error if insert fails.
-    // This prevents the UI from proceeding to "Join" a meeting that doesn't exist in DB.
     const { error } = await supabase.from('meetings').insert({
         id: meeting.id,
         title: meeting.title,
@@ -133,7 +131,6 @@ export const storageService = {
       
       const initialStatus = (isHost || isPrivileged) ? 'admitted' : 'waiting';
 
-      // Manual Check-then-Insert logic to avoid UPSERT constraint issues
       const { data: existing } = await supabase
         .from('participants')
         .select('id')
@@ -142,14 +139,29 @@ export const storageService = {
         .maybeSingle();
 
       if (existing) {
+        // Try Update
         const { error: updateError } = await supabase.from('participants').update({
           name: user.name,
           avatar: user.avatar,
           role: user.role,
           status: initialStatus
         }).eq('id', existing.id);
-        if (updateError) throw updateError;
+        
+        if (updateError) {
+             // Fallback: Try update without status if column missing (PGRST204)
+             if (updateError.code === 'PGRST204' || updateError.message?.includes('status')) {
+                 console.warn("Schema mismatch: 'status' column missing. Fallback to legacy update.");
+                 await supabase.from('participants').update({
+                    name: user.name,
+                    avatar: user.avatar,
+                    role: user.role
+                 }).eq('id', existing.id);
+                 return 'admitted'; // Auto-admit on legacy schema
+             }
+             throw updateError;
+        }
       } else {
+        // Try Insert
         const { error: insertError } = await supabase.from('participants').insert({
           meeting_id: meetingId,
           user_id: user.id,
@@ -158,8 +170,20 @@ export const storageService = {
           role: user.role,
           status: initialStatus
         });
+        
         if (insertError) {
-             console.error("Participant Insert Error (Possible FK Violation if meeting doesn't exist):", insertError);
+             // Fallback: Try insert without status if column missing (PGRST204)
+             if (insertError.code === 'PGRST204' || insertError.message?.includes('status')) {
+                 console.warn("Schema mismatch: 'status' column missing. Fallback to legacy insert.");
+                 await supabase.from('participants').insert({
+                    meeting_id: meetingId,
+                    user_id: user.id,
+                    name: user.name,
+                    avatar: user.avatar,
+                    role: user.role
+                 });
+                 return 'admitted'; // Auto-admit on legacy schema
+             }
              throw insertError;
         }
       }
@@ -172,7 +196,8 @@ export const storageService = {
   },
 
   admitParticipant: async (meetingId: string, userId: string) => {
-    await supabase.from('participants').update({ status: 'admitted' }).eq('meeting_id', meetingId).eq('user_id', userId);
+    const { error } = await supabase.from('participants').update({ status: 'admitted' }).eq('meeting_id', meetingId).eq('user_id', userId);
+    if (error) console.error("Admit error:", error);
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {

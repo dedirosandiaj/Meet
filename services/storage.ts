@@ -204,10 +204,9 @@ export const storageService = {
         .eq('user_id', user.id)
         .maybeSingle();
 
-    if (!existing) {
-        // LOGIC WAITING ROOM: CLIENT = waiting, OTHERS = admitted
-        const initialStatus = user.role === UserRole.CLIENT ? 'waiting' : 'admitted';
+    const initialStatus = user.role === UserRole.CLIENT ? 'waiting' : 'admitted';
 
+    if (!existing) {
         await supabase.from('participants').insert({
             meeting_id: meetingId,
             user_id: user.id,
@@ -216,6 +215,12 @@ export const storageService = {
             role: user.role,
             status: initialStatus
         });
+    } else {
+        // If user exists but status is missing (legacy record), update it
+        // Or if client rejoins and was waiting, ensure they are still waiting (don't override 'admitted')
+        if (!existing.status) {
+            await supabase.from('participants').update({ status: initialStatus }).eq('id', existing.id);
+        }
     }
   },
 

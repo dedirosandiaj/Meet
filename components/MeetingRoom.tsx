@@ -583,8 +583,18 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         (participants) => {
           // --- WAITING ROOM LOGIC: FILTER PARTICIPANTS ---
           
+          // Normalize Status if missing (Fallback for existing records)
+          const normalizedParticipants = participants.map(p => {
+              if (p.status) return p;
+              // Fallback for legacy records: If no status, assume admitted for non-clients, waiting for clients
+              return {
+                  ...p,
+                  status: p.role === 'CLIENT' ? 'waiting' : 'admitted'
+              } as Participant;
+          });
+          
           // 1. Check My Own Status
-          const myParticipantRecord = participants.find(p => p.user_id === user.id);
+          const myParticipantRecord = normalizedParticipants.find(p => p.user_id === user.id);
           if (myParticipantRecord && myParticipantRecord.status === 'admitted') {
               setIsAdmitted(true);
           } else if (user.role === UserRole.CLIENT) {
@@ -592,8 +602,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           }
 
           // 2. Separate Active vs Waiting (For Host View)
-          const admitted = participants.filter(p => p.status === 'admitted');
-          const waiting = participants.filter(p => p.status === 'waiting');
+          const admitted = normalizedParticipants.filter(p => p.status === 'admitted');
+          const waiting = normalizedParticipants.filter(p => p.status === 'waiting');
 
           const othersAdmitted = admitted.filter(p => p.user_id !== user.id);
           setActiveParticipants(othersAdmitted);

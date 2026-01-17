@@ -41,7 +41,6 @@ interface MeetingRoomProps {
   onEndCall: () => void;
 }
 
-// Google STUN Servers (Free)
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -49,35 +48,20 @@ const ICE_SERVERS = {
   ]
 };
 
-// --- HELPER: PARSE DATE TIME ---
 const parseMeetingDateTime = (dateStr: string, timeStr: string): Date => {
   const now = new Date();
   let targetDate = new Date();
-
-  // Handle Date
-  if (dateStr === 'Today') {
-    // Keep today
-  } else if (dateStr === 'Tomorrow') {
-    targetDate.setDate(now.getDate() + 1);
-  } else {
-    // Try parse "Nov 12"
-    const parsed = new Date(dateStr + ` ${now.getFullYear()}`); // Append current year
-    if (!isNaN(parsed.getTime())) {
-      targetDate = parsed;
-    }
+  if (dateStr === 'Today') {} 
+  else if (dateStr === 'Tomorrow') { targetDate.setDate(now.getDate() + 1); } 
+  else {
+    const parsed = new Date(dateStr + ` ${now.getFullYear()}`);
+    if (!isNaN(parsed.getTime())) targetDate = parsed;
   }
-
-  // Handle Time
   const [hours, minutes] = timeStr.split(':').map(Number);
-  
-  if (!isNaN(hours) && !isNaN(minutes)) {
-    targetDate.setHours(hours, minutes, 0, 0);
-  }
-
+  if (!isNaN(hours) && !isNaN(minutes)) targetDate.setHours(hours, minutes, 0, 0);
   return targetDate;
 };
 
-// --- COMPONENT: COUNTDOWN VIEW ---
 const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate: Date, meeting: Meeting, onBack: () => void, onComplete: () => void }) => {
   const [timeLeft, setTimeLeft] = useState<{days: number, hours: number, minutes: number, seconds: number} | null>(null);
 
@@ -85,12 +69,7 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
     const calculateTime = () => {
       const now = new Date().getTime();
       const distance = targetDate.getTime() - now;
-
-      if (distance < 0) {
-        onComplete(); // Time is up!
-        return;
-      }
-
+      if (distance < 0) { onComplete(); return; }
       setTimeLeft({
         days: Math.floor(distance / (1000 * 60 * 60 * 24)),
         hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
@@ -98,403 +77,116 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
         seconds: Math.floor((distance % (1000 * 60)) / 1000)
       });
     };
-
-    calculateTime(); // Initial call
+    calculateTime();
     const timer = setInterval(calculateTime, 1000);
-
     return () => clearInterval(timer);
   }, [targetDate, onComplete]);
 
-  if (!timeLeft) return (
-      <div className="h-full w-full flex items-center justify-center bg-slate-950">
-          <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-      </div>
-  );
+  if (!timeLeft) return <div className="h-full w-full flex items-center justify-center bg-slate-950"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>;
 
   return (
-    <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-            <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px]"></div>
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[100px]"></div>
-        </div>
-
-        <div className="relative z-10 w-full max-w-2xl text-center">
-            <div className="mb-8">
-                <span className="inline-block py-1 px-3 rounded-full bg-blue-500/10 text-blue-400 text-xs font-semibold tracking-wider uppercase mb-4 border border-blue-500/20">
-                    Upcoming Meeting
-                </span>
-                <h1 className="text-3xl md:text-5xl font-bold text-white mb-4 tracking-tight">{meeting.title}</h1>
-                <div className="flex items-center justify-center gap-6 text-slate-400 text-sm md:text-base">
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 md:w-5 md:h-5 text-slate-500" />
-                        <span>{meeting.date}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 md:w-5 md:h-5 text-slate-500" />
-                        <span>Hosted by {meeting.host}</span>
-                    </div>
-                </div>
+    <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden text-center">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px]"></div>
+        <div className="relative z-10">
+            <span className="inline-block py-1 px-3 rounded-full bg-blue-500/10 text-blue-400 text-xs font-semibold mb-4 border border-blue-500/20 uppercase tracking-widest">Upcoming Meeting</span>
+            <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">{meeting.title}</h1>
+            <div className="flex items-center justify-center gap-6 text-slate-400 text-sm mb-8">
+                <div className="flex items-center gap-2"><Calendar className="w-5 h-5 text-slate-500" /><span>{meeting.date}</span></div>
+                <div className="flex items-center gap-2"><Clock className="w-5 h-5 text-slate-500" /><span>{meeting.time}</span></div>
             </div>
-
-            <div className="grid grid-cols-4 gap-2 md:gap-4 mb-12">
-                {[
-                    { label: 'Days', value: timeLeft.days },
-                    { label: 'Hours', value: timeLeft.hours },
-                    { label: 'Minutes', value: timeLeft.minutes },
-                    { label: 'Seconds', value: timeLeft.seconds }
-                ].map((item, idx) => (
-                    <div key={idx} className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col items-center justify-center shadow-xl">
-                        <span className="text-2xl md:text-5xl font-mono font-bold text-white mb-1 md:mb-2 tabular-nums">
-                            {String(item.value).padStart(2, '0')}
-                        </span>
-                        <span className="text-[10px] md:text-xs text-slate-500 uppercase tracking-widest font-semibold">
-                            {item.label}
-                        </span>
+            <div className="grid grid-cols-4 gap-4 mb-12">
+                {[ {l:'Days',v:timeLeft.days}, {l:'Hrs',v:timeLeft.hours}, {l:'Min',v:timeLeft.minutes}, {l:'Sec',v:timeLeft.seconds} ].map((item, idx) => (
+                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col items-center shadow-xl">
+                        <span className="text-2xl md:text-5xl font-mono font-bold text-white tabular-nums">{String(item.v).padStart(2, '0')}</span>
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">{item.l}</span>
                     </div>
                 ))}
             </div>
-
-            <div className="flex flex-col items-center gap-4">
-                <p className="text-slate-400 text-sm animate-pulse">
-                    You will automatically join the room when the meeting starts.
-                </p>
-                <button 
-                    onClick={onBack}
-                    className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all border border-slate-700 hover:border-slate-600 group"
-                >
-                    <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                    Back to Dashboard
-                </button>
-            </div>
+            <button onClick={onBack} className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all border border-slate-700 group">
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back to Dashboard
+            </button>
         </div>
     </div>
   );
 };
 
-// --- COMPONENT: WAITING ROOM UI (FOR CLIENT) ---
 const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () => void }) => {
-    const [isChecking, setIsChecking] = useState(false);
-
-    const handleManualCheck = () => {
-        setIsChecking(true);
-        setTimeout(() => setIsChecking(false), 1000);
-    };
-
+    const [refreshing, setRefreshing] = useState(false);
     return (
-        <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-                 <div className="absolute top-[-20%] right-[-20%] w-[50%] h-[50%] bg-orange-600/5 rounded-full blur-[100px]"></div>
-                 <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-blue-600/5 rounded-full blur-[100px]"></div>
-             </div>
-
-             <div className="relative z-10 text-center max-w-lg bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl animate-[fadeIn_0.5s_ease-out]">
-                 <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-slate-900 shadow-xl">
-                     <Lock className="w-8 h-8 text-blue-400" />
-                 </div>
-                 
-                 <h1 className="text-2xl font-bold text-white mb-2">Please wait, the meeting host will let you in soon.</h1>
+        <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+             <div className="relative z-10 max-w-lg bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl">
+                 <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-slate-900"><Lock className="w-8 h-8 text-blue-400" /></div>
+                 <h1 className="text-2xl font-bold text-white mb-2">Please wait, the host will let you in soon.</h1>
                  <p className="text-slate-400 text-sm mb-8">{meeting.title}</p>
-                 
-                 <div className="flex items-center justify-center gap-2 text-xs text-slate-500 bg-slate-900/50 py-2 px-4 rounded-full mx-auto w-fit border border-slate-800 mb-8">
-                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                     Waiting for admittance...
-                 </div>
-
                  <div className="space-y-3">
-                     <button 
-                         onClick={handleManualCheck}
-                         disabled={isChecking}
-                         className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                     >
-                         {isChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                         Refresh Status
+                     <button onClick={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1000); }} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
+                         {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Refreshing status...
                      </button>
-                     <button 
-                         onClick={onLeave}
-                         className="w-full py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl font-medium transition-colors"
-                     >
-                         Leave
-                     </button>
+                     <button onClick={onLeave} className="w-full py-3 text-red-400 hover:bg-red-500/10 rounded-xl font-medium transition-colors">Leave</button>
                  </div>
              </div>
         </div>
     );
 };
 
-// --- CUSTOM HOOK: AUDIO LEVEL VISUALIZER ---
-const useAudioLevel = (stream: MediaStream | null | undefined) => {
-  const [level, setLevel] = useState(0);
-  const animationRef = useRef<number>(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-
-  useEffect(() => {
-    if (!stream) {
-      setLevel(0);
-      return;
-    }
-
-    const audioTracks = stream.getAudioTracks();
-    if (audioTracks.length === 0) return;
-
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (audioContextRef.current.state === 'suspended') {
-            audioContextRef.current.resume();
-        }
-      }
-
-      const audioContext = audioContextRef.current;
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 64; 
-      analyser.smoothingTimeConstant = 0.5; 
-
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      sourceRef.current = source;
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const updateLevel = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        const avg = sum / dataArray.length;
-        const normalized = Math.min(100, Math.max(0, avg * 2));
-        
-        setLevel(prev => {
-            if (normalized > prev) return normalized;
-            return prev * 0.9; 
-        });
-
-        animationRef.current = requestAnimationFrame(updateLevel);
-      };
-
-      updateLevel();
-
-      return () => {
-        if (animationRef.current) cancelAnimationFrame(animationRef.current);
-        source.disconnect();
-      };
-    } catch (e) {
-      console.error("Audio Context Error", e);
-    }
-  }, [stream]);
-
-  return level;
-};
-
-// --- HELPER COMPONENT: AUDIO BAR ---
-const AudioIndicator = ({ level }: { level: number }) => {
-    const baseH = 4;
-    const h1 = Math.max(baseH, level * 0.15); 
-    const h2 = Math.max(baseH, level * 0.3);  
-    const h3 = Math.max(baseH, level * 0.15); 
-    const activeColor = level > 10 ? 'bg-green-500' : 'bg-slate-500';
-    const centerColor = level > 10 ? 'bg-green-400' : 'bg-slate-500';
-
-    return (
-        <div className="flex items-end gap-0.5 h-6 justify-center items-center">
-            <div className={`w-1 rounded-full transition-all duration-75 ${activeColor}`} style={{ height: `${h1}px` }}></div>
-            <div className={`w-1 rounded-full transition-all duration-75 ${centerColor}`} style={{ height: `${h2}px` }}></div>
-            <div className={`w-1 rounded-full transition-all duration-75 ${activeColor}`} style={{ height: `${h3}px` }}></div>
-        </div>
-    );
-};
-
-// --- HELPER COMPONENT: ZOOMABLE VIEW ---
-interface ZoomableViewProps {
-  children: React.ReactNode;
-  onTogglePin: () => void;
-  isPinned: boolean;
-  onToggleFit: () => void;
-  isFit: boolean;
-}
-
+interface ZoomableViewProps { children: React.ReactNode; onTogglePin: () => void; isPinned: boolean; onToggleFit: () => void; isFit: boolean; }
 const ZoomableView: React.FC<ZoomableViewProps> = ({ children, onTogglePin, isPinned, onToggleFit, isFit }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleZoom = (delta: number) => {
-    setScale(prev => {
-      const newScale = Math.min(Math.max(1, prev + delta), 6); 
-      if (newScale === 1) setPosition({ x: 0, y: 0 });
-      return newScale;
-    });
-  };
-
-  const handleReset = () => {
-    setScale(1);
-    setPosition({ x: 0, y: 0 });
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.stopPropagation();
-    if (e.deltaY < 0) handleZoom(0.1);
-    else handleZoom(-0.1);
-  };
-
-  const onMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
-    if (scale === 1) return;
-    setIsDragging(true);
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    dragStartRef.current = { x: clientX - position.x, y: clientY - position.y };
-  };
-
-  const onMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDragging) return;
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    setPosition({ x: clientX - dragStartRef.current.x, y: clientY - dragStartRef.current.y });
-  };
-
-  const onMouseUp = () => setIsDragging(false);
-
+  const handleZoom = (d: number) => setScale(p => Math.min(Math.max(1, p + d), 6));
+  const handleReset = () => { setScale(1); setPosition({x:0,y:0}); };
+  const onMouseDown = (e: any) => { if(scale===1) return; setIsDragging(true); const cX = e.touches ? e.touches[0].clientX : e.clientX; const cY = e.touches ? e.touches[0].clientY : e.clientY; dragStartRef.current = { x: cX - position.x, y: cY - position.y }; };
+  const onMouseMove = (e: any) => { if(!isDragging) return; const cX = e.touches ? e.touches[0].clientX : e.clientX; const cY = e.touches ? e.touches[0].clientY : e.clientY; setPosition({ x: cX - dragStartRef.current.x, y: cY - dragStartRef.current.y }); };
   return (
-    <div 
-      ref={containerRef}
-      className="relative w-full h-full overflow-hidden bg-slate-900 group"
-      onWheel={handleWheel}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-      onTouchStart={onMouseDown}
-      onTouchMove={onMouseMove}
-      onTouchEnd={onMouseUp}
-    >
-      <div 
-        style={{ 
-          transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-          transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-          cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-        }}
-        className="w-full h-full flex items-center justify-center"
-      >
-        {children}
+    <div className="relative w-full h-full overflow-hidden bg-slate-900 group" onWheel={(e)=>{if(e.deltaY<0) handleZoom(0.1); else handleZoom(-0.1);}} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={()=>setIsDragging(false)} onMouseLeave={()=>setIsDragging(false)} onTouchStart={onMouseDown} onTouchMove={onMouseMove} onTouchEnd={()=>setIsDragging(false)}>
+      <div style={{ transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`, transition: isDragging ? 'none' : 'transform 0.1s ease-out', cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default' }} className="w-full h-full flex items-center justify-center">{children}</div>
+      <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+            <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }} className={`p-2 backdrop-blur text-white rounded-lg shadow-lg border border-slate-700 ${isPinned ? 'bg-blue-600' : 'bg-slate-800/80'}`}>{isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}</button>
+            <button onClick={(e) => { e.stopPropagation(); onToggleFit(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg shadow-lg border border-slate-700"><Scaling className="w-4 h-4" /></button>
+            <div className="h-px bg-slate-700"></div>
+            <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5); }} className="p-2 bg-slate-800/80 text-white rounded-lg"><ZoomIn className="w-4 h-4" /></button>
+            <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="p-2 bg-slate-800/80 text-white rounded-lg"><RefreshCcw className="w-4 h-4" /></button>
       </div>
-
-      <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 pointer-events-none">
-        <div className="pointer-events-auto flex flex-col gap-2">
-            <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }} className={`p-2 backdrop-blur text-white rounded-lg shadow-lg border border-slate-700 transition-colors ${isPinned ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-800/80 hover:bg-slate-700'}`} title={isPinned ? "Unpin (Minimize)" : "Pin (Maximize)"}>
-                {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); onToggleFit(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title={isFit ? "Fill Screen" : "Fit to Screen"}>
-                <Scaling className="w-4 h-4" />
-            </button>
-            <div className="h-px bg-slate-700 my-0.5"></div>
-            <button onClick={(e) => { e.stopPropagation(); handleZoom(0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Zoom In">
-                <ZoomIn className="w-4 h-4" />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleZoom(-0.5); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Zoom Out">
-                <ZoomOut className="w-4 h-4" />
-            </button>
-            <button onClick={(e) => { e.stopPropagation(); handleReset(); }} className="p-2 bg-slate-800/80 backdrop-blur text-white rounded-lg hover:bg-slate-700 shadow-lg border border-slate-700" title="Reset View">
-                <RefreshCcw className="w-4 h-4" />
-            </button>
-        </div>
-      </div>
-      
-      {scale > 1 && <div className="absolute bottom-14 right-3 px-2 py-1 bg-black/60 backdrop-blur text-white text-xs rounded pointer-events-none border border-white/10">{Math.round(scale * 100)}%</div>}
     </div>
   );
 };
 
-// --- HELPER COMPONENT: LOCAL VIDEO ---
-const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user, onPin, isPinned }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User, onPin: () => void, isPinned: boolean }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioLevel = useAudioLevel(isMuted ? null : stream);
-  const [isFit, setIsFit] = useState(isScreenSharing); 
-
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.muted = true;
-    }
-  }, [stream]);
-
-  return (
-    <div className={`relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl group transition-all duration-300 ${isPinned ? 'border-blue-500/50 shadow-blue-500/20' : (audioLevel > 15 ? 'border-green-500/50 shadow-green-500/10' : 'border-slate-800')}`}>
-        <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}>
-          <video 
-              ref={videoRef} 
-              autoPlay 
-              muted 
-              playsInline 
-              className={`w-full h-full transition-transform duration-300 ${!isScreenSharing ? 'transform scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'} ${isFit ? 'object-contain' : 'object-cover'}`} 
-          />
-        </ZoomableView>
-        
-        {isVideoOff && !isScreenSharing && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-800 pointer-events-none">
-                <div className="relative">
-                    <div className="w-20 h-20 md:w-24 md:h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-2xl md:text-3xl font-bold text-white shadow-xl">
-                        {user.name.charAt(0)}
-                    </div>
-                    {audioLevel > 10 && <div className="absolute inset-0 rounded-full border-4 border-green-500/30 animate-ping"></div>}
-                </div>
-            </div>
-        )}
-
-        <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium flex items-center gap-2 z-10 max-w-[85%] pointer-events-none">
-            <span className="truncate">{user.name} (You)</span>
-            {isMuted ? <MicOff className="w-3 h-3 text-red-500 shrink-0" /> : <AudioIndicator level={audioLevel} />}
-            {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}
+const AudioIndicator = ({ level }: { level: number }) => {
+    const h2 = Math.max(4, level * 0.3);
+    return (
+        <div className="flex items-center gap-0.5 h-6">
+            <div className={`w-1 rounded-full transition-all duration-75 ${level > 10 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ height: `${h2}px` }}></div>
         </div>
-    </div>
-  );
+    );
 };
 
-// --- HELPER COMPONENT: REMOTE VIDEO ---
-const RemoteVideoPlayer = ({ stream, participant, isScreenSharing, onPin, isPinned }: { stream: MediaStream | undefined, participant: Participant, isScreenSharing: boolean, onPin: () => void, isPinned: boolean }) => {
+const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user, onPin, isPinned }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioLevel = useAudioLevel(stream);
   const [isFit, setIsFit] = useState(isScreenSharing);
-
-  useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
-  }, [stream]);
-
+  useEffect(() => { if (videoRef.current && stream) { videoRef.current.srcObject = stream; videoRef.current.muted = true; } }, [stream]);
   return (
-     <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${isPinned ? 'border-blue-500/50 shadow-blue-500/20' : (audioLevel > 15 ? 'border-green-500/50' : 'border-slate-800')}`}>
-       {stream ? (
-          <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}>
-            <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                className={`w-full h-full bg-slate-900 ${isFit ? 'object-contain' : 'object-cover'}`}
-            />
-          </ZoomableView>
-       ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-              <div className="flex flex-col items-center gap-2">
-                  <div className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-slate-600 border-t-blue-500 animate-spin"></div>
-                  <span className="text-[10px] md:text-xs text-slate-500">Connecting...</span>
-              </div>
-          </div>
-       )}
-       
-       {stream && stream.getVideoTracks().length === 0 && audioLevel > 10 && (
-           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-green-500/10 rounded-full animate-pulse flex items-center justify-center">
-                 <Activity className="w-6 h-6 md:w-8 md:h-8 text-green-500" />
-              </div>
-           </div>
-       )}
+    <div className={`relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border shadow-2xl transition-all duration-300 ${isPinned ? 'border-blue-500' : 'border-slate-800'}`}>
+        <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}>
+          <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full ${!isScreenSharing ? 'scale-x-[-1]' : ''} ${isVideoOff && !isScreenSharing ? 'hidden' : 'block'} ${isFit ? 'object-contain' : 'object-cover'}`} />
+        </ZoomableView>
+        {isVideoOff && !isScreenSharing && <div className="absolute inset-0 flex items-center justify-center bg-slate-800"><div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-3xl font-bold text-white">{user.name.charAt(0)}</div></div>}
+        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium z-10 flex items-center gap-2"><span>{user.name} (You)</span>{isMuted && <MicOff className="w-3 h-3 text-red-500" />}</div>
+    </div>
+  );
+};
 
-       <div className="absolute bottom-3 left-3 md:bottom-4 md:left-4 bg-black/60 backdrop-blur-md px-2 py-1 md:px-3 md:py-1.5 rounded-lg text-white text-xs md:text-sm font-medium z-10 flex items-center gap-2 max-w-[85%] pointer-events-none">
-          <span className="truncate">{participant.name}</span>
-          <AudioIndicator level={audioLevel} />
-          {isScreenSharing && <MonitorUp className="w-3 h-3 text-green-400 shrink-0" />}
-       </div>
+const RemoteVideoPlayer = ({ stream, participant, isScreenSharing, onPin, isPinned }: any) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isFit, setIsFit] = useState(isScreenSharing);
+  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
+  return (
+     <div className={`relative w-full h-full rounded-2xl overflow-hidden border transition-all duration-300 ${isPinned ? 'border-blue-500' : 'border-slate-800'}`}>
+       {stream ? (
+          <ZoomableView onTogglePin={onPin} isPinned={isPinned} onToggleFit={() => setIsFit(!isFit)} isFit={isFit}><video ref={videoRef} autoPlay playsInline className={`w-full h-full bg-slate-900 ${isFit ? 'object-contain' : 'object-cover'}`} /></ZoomableView>
+       ) : <div className="absolute inset-0 flex items-center justify-center bg-slate-800 text-slate-500 text-xs">Connecting...</div>}
+       <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium z-10"><span>{participant.name}</span></div>
      </div>
   );
 };
@@ -504,639 +196,203 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [isWaiting, setIsWaiting] = useState(true);
   const [targetDate, setTargetDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isLeaving, setIsLeaving] = useState(false);
-  const [isAdmitted, setIsAdmitted] = useState<boolean>(true); 
-  const [hostEndedMeeting, setHostEndedMeeting] = useState(false);
+  const [isAdmitted, setIsAdmitted] = useState<boolean>(true);
   const [pinnedUserId, setPinnedUserId] = useState<string | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
-  const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]); 
+  const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
-  const [remoteScreenShares, setRemoteScreenShares] = useState<Set<string>>(new Set());
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const isCleaningUp = useRef(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [permissionError, setPermissionError] = useState(false);
   const [showSidebar, setShowSidebar] = useState<'chat' | 'participants' | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [syncing, setSyncing] = useState(false);
 
-  // 1. INITIAL LOAD & LOBBY JOIN
+  // LOGIKA UTAMA: Gabungan Join & Subscribe
   useEffect(() => {
-    const initMeeting = async () => {
+    const startup = async () => {
       const meetings = await storageService.getMeetings();
       const found = meetings.find(m => m.id === meetingId);
-      
-      if (found) {
-        setMeeting(found);
-        
-        // --- JOIN LOBBY IMMEDIATELY ---
-        // We do this before webcam starts so user shows up in database
-        await storageService.joinMeetingRoom(meetingId, user);
+      if (!found) { setLoading(false); return; }
+      setMeeting(found);
 
-        let shouldWait = false;
-        let tDate: Date | null = null;
+      // Register ke DB segera
+      const status = await storageService.joinMeetingRoom(meetingId, user);
+      setIsAdmitted(status === 'admitted');
 
-        if (found.status !== 'live') {
-            tDate = parseMeetingDateTime(found.date, found.time);
-            const now = new Date();
-            if (tDate > now) {
-                shouldWait = true;
-            }
-        }
-        
-        setTargetDate(tDate);
-        setIsWaiting(shouldWait);
-        
-        if (user.role === UserRole.CLIENT) {
-           setIsAdmitted(false); 
-        }
+      // Kalkulasi countdown
+      const tDate = parseMeetingDateTime(found.date, found.time);
+      setTargetDate(tDate);
+      const shouldWait = found.status !== 'live' && tDate > new Date();
+      setIsWaiting(shouldWait);
 
-        if (!shouldWait) {
-          startWebcam();
-        } else {
-          setLoading(false);
-        }
-      } else {
-        setLoading(false);
-      }
-    };
-
-    initMeeting();
-
-    return () => {
-      performCleanup();
-    };
-  }, [meetingId]);
-
-  // 2. REALTIME SUBSCRIPTION
-  useEffect(() => {
-    if (!meeting) return;
-
-    const setupRealtime = async () => {
-      const channel = storageService.subscribeToMeeting(
-        meetingId,
+      // Start Realtime
+      const channel = storageService.subscribeToMeeting(meetingId, 
         (participants) => {
-          const normalizedParticipants = participants.map(p => {
-              if (p.status) return p;
-              return {
-                  ...p,
-                  status: p.role === 'CLIENT' ? 'waiting' : 'admitted'
-              } as Participant;
-          });
-          
-          const myParticipantRecord = normalizedParticipants.find(p => p.user_id === user.id);
-          if (myParticipantRecord) {
-              if (myParticipantRecord.status === 'admitted') {
-                  setIsAdmitted(true);
-              } else {
-                  setIsAdmitted(false);
-              }
-          }
-
-          const admitted = normalizedParticipants.filter(p => p.status === 'admitted');
-          const waiting = normalizedParticipants.filter(p => p.status === 'waiting');
-          const othersAdmitted = admitted.filter(p => p.user_id !== user.id);
-          
-          setActiveParticipants(othersAdmitted);
-          setWaitingParticipants(waiting);
-          
-          const currentAdmittedIds = othersAdmitted.map(p => p.user_id);
-          peerConnections.current.forEach((_, id) => {
-            if (!currentAdmittedIds.includes(id)) {
-              closePeerConnection(id);
-            }
-          });
+          const me = participants.find(p => p.user_id === user.id);
+          if (me) setIsAdmitted(me.status === 'admitted');
+          setActiveParticipants(participants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+          setWaitingParticipants(participants.filter(p => p.status === 'waiting'));
         },
         (signal) => handleSignal(signal)
       );
-      
       channelRef.current = channel;
+
+      if (!shouldWait) startWebcam();
+      setLoading(false);
     };
+    startup();
+    return () => performCleanup();
+  }, [meetingId]);
 
-    setupRealtime();
-
-    return () => {
-      channelRef.current?.unsubscribe();
-    };
-  }, [meeting]); 
-
-  // 3. READY SIGNAL WHEN ADMITTED
+  // Signal Ready saat Admitted
   useEffect(() => {
       if (isAdmitted && channelRef.current && !isWaiting && webcamStream) {
-          setTimeout(() => {
-             storageService.sendSignal(channelRef.current, { type: 'ready', from: user.id });
-          }, 500);
+          setTimeout(() => storageService.sendSignal(channelRef.current, { type: 'ready', from: user.id }), 1000);
       }
   }, [isAdmitted, isWaiting, webcamStream]);
 
-
-  const createPeerConnection = (targetUserId: string) => {
-    if (peerConnections.current.has(targetUserId)) {
-        return peerConnections.current.get(targetUserId);
-    }
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    const streamToSend = isScreenSharing && screenStreamRef.current ? screenStreamRef.current : webcamStreamRef.current;
-    
-    if (streamToSend) {
-      streamToSend.getTracks().forEach(track => {
-        pc.addTrack(track, streamToSend);
-      });
-    }
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && channelRef.current) {
-        storageService.sendSignal(channelRef.current, {
-          type: 'candidate',
-          candidate: event.candidate,
-          from: user.id,
-          to: targetUserId
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      const remoteStream = event.streams[0];
-      setRemoteStreams(prev => new Map(prev).set(targetUserId, remoteStream));
-    };
-
-    peerConnections.current.set(targetUserId, pc);
-    return pc;
-  };
-
-  const closePeerConnection = (targetUserId: string) => {
-    const pc = peerConnections.current.get(targetUserId);
-    if (pc) {
-      pc.close();
-      peerConnections.current.delete(targetUserId);
-    }
-    setRemoteStreams(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(targetUserId);
-      return newMap;
-    });
-    setRemoteScreenShares(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(targetUserId);
-        return newSet;
-    });
-  };
-
-  const handleSignal = async (signal: any) => {
-    if (signal.from === user.id) return; 
-    
-    if (signal.type === 'force-end') {
-        performCleanup(); 
-        setHostEndedMeeting(true); 
-        return;
-    }
-
-    if (signal.type === 'leave') {
-        setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
-        closePeerConnection(signal.from);
-        if (pinnedUserId === signal.from) setPinnedUserId(null); 
-        return;
-    }
-    if (signal.type === 'chat') {
-        setChatMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            sender: signal.senderName,
-            text: signal.text,
-            time: formatTime(),
-            isSelf: false
-        }]);
-        return;
-    }
-    if (signal.type === 'screen-toggle') {
-        setRemoteScreenShares(prev => {
-            const newSet = new Set(prev);
-            if (signal.isSharing) { newSet.add(signal.from); } else { newSet.delete(signal.from); }
-            return newSet;
-        });
-        return;
-    }
-
-    if (signal.to && signal.to !== user.id) return;
-    if (!isAdmitted) return;
-
-    const { type, from, candidate, sdp } = signal;
-    const channel = channelRef.current;
-    if (!channel) return;
-
-    try {
-        switch (type) {
-        case 'ready':
-            const pc1 = createPeerConnection(from)!;
-            const offer = await pc1.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-            await pc1.setLocalDescription(offer);
-            storageService.sendSignal(channel, { type: 'offer', sdp: offer, from: user.id, to: from });
-            break;
-        case 'offer':
-            const pc2 = createPeerConnection(from)!;
-            await pc2.setRemoteDescription(new RTCSessionDescription(sdp));
-            const answer = await pc2.createAnswer();
-            await pc2.setLocalDescription(answer);
-            storageService.sendSignal(channel, { type: 'answer', sdp: answer, from: user.id, to: from });
-            break;
-        case 'answer':
-            const pc3 = peerConnections.current.get(from);
-            if (pc3) await pc3.setRemoteDescription(new RTCSessionDescription(sdp));
-            break;
-        case 'candidate':
-            const pc4 = peerConnections.current.get(from);
-            if (pc4 && candidate) await pc4.addIceCandidate(new RTCIceCandidate(candidate));
-            break;
-        }
-    } catch (err) {
-        console.error("Signaling Error:", err);
-    }
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-    const msgObj = { id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true };
-    setChatMessages(prev => [...prev, msgObj]);
-    setNewMessage('');
-    if (channelRef.current) {
-        storageService.sendSignal(channelRef.current, { type: 'chat', text: msgObj.text, senderName: user.name, from: user.id });
-    }
+  const handleManualSync = async () => {
+      setSyncing(true);
+      const pts = await storageService.getParticipants(meetingId);
+      setActiveParticipants(pts.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+      setWaitingParticipants(pts.filter(p => p.status === 'waiting'));
+      setTimeout(() => setSyncing(false), 800);
   };
 
   const startWebcam = async () => {
     try {
-      if (webcamStreamRef.current) webcamStreamRef.current.getTracks().forEach(t => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
-      webcamStreamRef.current = stream; 
-      setWebcamStream(stream); 
-      setPermissionError(false);
-      setLoading(false);
-    } catch (err) {
-      console.error("Error accessing media:", err);
-      setPermissionError(true);
-      setLoading(false);
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      webcamStreamRef.current = stream; setWebcamStream(stream);
+    } catch (err) { console.error("Camera access denied"); }
   };
 
-  const toggleMute = () => {
-    if (webcamStreamRef.current) {
-      webcamStreamRef.current.getAudioTracks().forEach(track => { track.enabled = !track.enabled; });
-      setIsMuted(prev => !prev);
-    }
+  const createPeerConnection = (targetUserId: string) => {
+    if (peerConnections.current.has(targetUserId)) return peerConnections.current.get(targetUserId);
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    if (webcamStreamRef.current) webcamStreamRef.current.getTracks().forEach(t => pc.addTrack(t, webcamStreamRef.current!));
+    pc.onicecandidate = (e) => { if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'candidate', candidate: e.candidate, from: user.id, to: targetUserId }); };
+    pc.ontrack = (e) => setRemoteStreams(prev => new Map(prev).set(targetUserId, e.streams[0]));
+    peerConnections.current.set(targetUserId, pc);
+    return pc;
   };
 
-  const toggleVideo = () => {
-    if (webcamStreamRef.current) {
-      webcamStreamRef.current.getVideoTracks().forEach(track => { track.enabled = !track.enabled; });
-      setIsVideoOff(prev => !prev);
-    }
+  const handleSignal = async (signal: any) => {
+    if (signal.from === user.id) return;
+    if (signal.type === 'chat') { setChatMessages(p => [...p, { id: Date.now().toString(), sender: signal.senderName, text: signal.text, time: formatTime(), isSelf: false }]); return; }
+    if (signal.to && signal.to !== user.id) return;
+    if (!isAdmitted) return;
+    try {
+        const { type, from, candidate, sdp } = signal;
+        if (type === 'ready') { const pc = createPeerConnection(from)!; const offer = await pc.createOffer(); await pc.setLocalDescription(offer); storageService.sendSignal(channelRef.current, { type: 'offer', sdp: offer, from: user.id, to: from }); }
+        else if (type === 'offer') { const pc = createPeerConnection(from)!; await pc.setRemoteDescription(new RTCSessionDescription(sdp)); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); storageService.sendSignal(channelRef.current, { type: 'answer', sdp: ans, from: user.id, to: from }); }
+        else if (type === 'answer') { const pc = peerConnections.current.get(from); if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp)); }
+        else if (type === 'candidate') { const pc = peerConnections.current.get(from); if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
+    } catch (e) {}
   };
 
-  const toggleScreenShare = async () => {
-    const channel = channelRef.current;
-    if (!channel) return;
-    if (isScreenSharing) {
-       screenStreamRef.current?.getTracks().forEach(t => t.stop());
-       screenStreamRef.current = null;
-       setIsScreenSharing(false);
-       if (webcamStreamRef.current) {
-           const videoTrack = webcamStreamRef.current.getVideoTracks()[0];
-           peerConnections.current.forEach((pc) => {
-               const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-               if (sender && videoTrack) sender.replaceTrack(videoTrack);
-           });
-       }
-       storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: false, from: user.id });
-    } else {
-       try {
-         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-         screenStreamRef.current = stream;
-         setIsScreenSharing(true);
-         const screenTrack = stream.getVideoTracks()[0];
-         peerConnections.current.forEach((pc) => {
-             const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-             if (sender && screenTrack) sender.replaceTrack(screenTrack);
-         });
-         storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: true, from: user.id });
-         screenTrack.onended = () => {
-             setIsScreenSharing(false);
-             screenStreamRef.current = null;
-             if (webcamStreamRef.current) {
-                const camTrack = webcamStreamRef.current.getVideoTracks()[0];
-                peerConnections.current.forEach((pc) => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender && camTrack) sender.replaceTrack(camTrack);
-                });
-             }
-             storageService.sendSignal(channel, { type: 'screen-toggle', isSharing: false, from: user.id });
-         };
-       } catch (e) { console.error(e); }
-    }
-  };
-
-  const handlePin = (id: string) => {
-      if (pinnedUserId === id) {
-          setPinnedUserId(null); 
-      } else {
-          setPinnedUserId(id); 
-      }
-  };
-
-  const handleAdmit = async (participantId: string) => {
-      await storageService.admitParticipant(meetingId, participantId);
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault(); if (!newMessage.trim()) return;
+    setChatMessages(p => [...p, { id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true }]);
+    storageService.sendSignal(channelRef.current, { type: 'chat', text: newMessage, senderName: user.name, from: user.id });
+    setNewMessage('');
   };
 
   const performCleanup = () => {
-    if (isCleaningUp.current) return;
-    isCleaningUp.current = true;
-    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
-    screenStreamRef.current?.getTracks().forEach(track => track.stop());
+    webcamStreamRef.current?.getTracks().forEach(t => t.stop());
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
     channelRef.current?.unsubscribe();
-    storageService.leaveMeetingRoom(meetingId, user.id).catch(err => console.error(err));
+    storageService.leaveMeetingRoom(meetingId, user.id);
   };
 
-  const handleLeave = async () => {
-    setIsLeaving(true);
-    const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
-    if (channelRef.current) {
-        if (isHost) {
-           await storageService.sendSignal(channelRef.current, { type: 'force-end', from: user.id });
-        } else {
-           await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
-        }
-    }
-    onEndCall();
-  };
+  if (loading) return <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-white"><div className="w-12 h-12 border-4 border-t-blue-600 rounded-full animate-spin mb-4"></div><p>Joining Room...</p></div>;
+  if (isWaiting && meeting && targetDate) return <CountdownView targetDate={targetDate} meeting={meeting} onBack={onEndCall} onComplete={() => { setIsWaiting(false); startWebcam(); }} />;
+  if (!isAdmitted && meeting) return <WaitingRoomView meeting={meeting} onLeave={onEndCall} />;
 
-  const handleCountdownComplete = () => {
-    setLoading(true);
-    setIsWaiting(false);
-    startWebcam();
-  };
-
-  if (isLeaving) return <div className="h-[100dvh] w-full bg-slate-950 flex items-center justify-center"></div>;
-  if (loading) return (
-    <div className="h-[100dvh] bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
-        <div className="w-12 h-12 border-4 border-slate-800 border-t-blue-600 rounded-full animate-spin"></div>
-        <p className="text-slate-400 font-mono text-sm">Joining Room...</p>
-    </div>
-  );
-
-  if (isWaiting && targetDate && meeting) {
-    return (
-        <CountdownView 
-            targetDate={targetDate} 
-            meeting={meeting} 
-            onBack={onEndCall} 
-            onComplete={handleCountdownComplete} 
-        />
-    );
-  }
-
-  if (isWaiting) return (
-      <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4">
-        <h1 className="text-2xl font-bold text-white mb-4">Waiting for Host</h1>
-        <p className="text-slate-400 mb-6">The meeting has not started yet.</p>
-        <button onClick={onEndCall} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors">Return to Dashboard</button>
-      </div>
-  );
-
-  if (!isAdmitted && meeting) {
-      return <WaitingRoomView meeting={meeting} onLeave={handleLeave} />;
-  }
-
-  const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
-  const isPinnedMode = pinnedUserId !== null;
   const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
-  
-  const renderLocalUser = (isInGrid: boolean) => (
-      <div className={`relative w-full ${isInGrid ? (activeParticipants.length === 0 ? 'aspect-[3/4] md:aspect-video' : 'aspect-video') : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
-          <LocalVideoPlayer 
-              stream={localStreamDisplay} 
-              isMuted={isMuted} 
-              isVideoOff={isVideoOff} 
-              isScreenSharing={isScreenSharing} 
-              user={user} 
-              onPin={() => handlePin('local')}
-              isPinned={pinnedUserId === 'local'}
-          />
-      </div>
-  );
-
-  const renderRemoteUser = (p: Participant, isInGrid: boolean) => (
-      <div className={`relative w-full ${isInGrid ? 'aspect-video' : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
-          <RemoteVideoPlayer 
-              stream={remoteStreams.get(p.user_id)} 
-              participant={p} 
-              isScreenSharing={remoteScreenShares.has(p.user_id)} 
-              onPin={() => handlePin(p.user_id)}
-              isPinned={pinnedUserId === p.user_id}
-          />
-      </div>
-  );
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
-      <div className="flex-1 flex flex-col h-full relative">
-        <div className="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-10 flex justify-between items-start pointer-events-none">
-          <div className="bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 pointer-events-auto shadow-lg max-w-[calc(100%-80px)]">
-             <div className="flex items-center gap-2 md:gap-3">
-                <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center shrink-0"><Video className="w-4 h-4 text-blue-500" /></div>
-                <div className="overflow-hidden min-w-0">
-                  <h1 className="font-bold text-white text-xs md:text-sm truncate">{meeting?.title || 'Meeting Room'}</h1>
-                  <p className="text-[10px] md:text-xs text-slate-400 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>{formatTime()} <span className="hidden sm:inline">• ID: {meetingId}</span></p>
-                </div>
-             </div>
-          </div>
+      <div className="flex-1 flex flex-col relative">
+        <div className="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-lg">
+           <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center"><Video className="w-4 h-4 text-blue-500" /></div>
+              <div><h1 className="font-bold text-white text-sm">{meeting?.title}</h1><p className="text-[10px] text-slate-400">ID: {meetingId}</p></div>
+           </div>
         </div>
 
-        <div className="flex-1 p-2 pt-20 pb-32 md:p-4 md:pt-24 md:pb-24 overflow-hidden relative">
-           {permissionError && (
-             <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-950/90 backdrop-blur-sm px-4">
-                <div className="text-center p-6 bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm">
-                  <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><VideoOff className="w-8 h-8" /></div>
-                  <h3 className="text-white text-xl font-bold">Camera Blocked</h3>
-                  <p className="text-slate-400 mt-2 text-sm mb-4">Please allow camera access.</p>
-                  <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 text-white rounded-lg w-full">Try Again</button>
-                </div>
-             </div>
-           )}
-
-           {!isPinnedMode ? (
-               <div className="h-full overflow-y-auto custom-scrollbar">
-                   <div className={`grid gap-2 md:gap-4 h-full content-center transition-all duration-300 ${
-                      activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 
-                      activeParticipants.length === 1 ? 'grid-cols-1 md:grid-cols-2' :
-                      'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
-                   }`}>
-                       {renderLocalUser(true)}
-                       {activeParticipants.map((p) => (
-                           <div key={p.user_id}>{renderRemoteUser(p, true)}</div>
-                       ))}
-                   </div>
-               </div>
-           ) : (
-               <div className="flex flex-col md:flex-row h-full gap-2 md:gap-4">
-                   <div className="flex-1 rounded-2xl overflow-hidden bg-black shadow-2xl relative order-1 md:order-2">
-                       {pinnedUserId === 'local' 
-                           ? renderLocalUser(false) 
-                           : activeParticipants.filter(p => p.user_id === pinnedUserId).map(p => renderRemoteUser(p, false))
-                       }
-                   </div>
-                   <div className="h-32 md:h-full md:w-64 overflow-x-auto md:overflow-y-auto flex md:flex-col gap-2 order-2 md:order-1 shrink-0 no-scrollbar">
-                       {pinnedUserId !== 'local' && (
-                           <div className="min-w-[160px] md:min-w-0 md:h-40 shrink-0 aspect-video rounded-xl overflow-hidden border border-slate-800">
-                               {renderLocalUser(false)}
-                           </div>
-                       )}
-                       {activeParticipants.filter(p => p.user_id !== pinnedUserId).map(p => (
-                           <div key={p.user_id} className="min-w-[160px] md:min-w-0 md:h-40 shrink-0 aspect-video rounded-xl overflow-hidden border border-slate-800">
-                               {renderRemoteUser(p, false)}
-                           </div>
-                       ))}
-                   </div>
-               </div>
-           )}
+        <div className="flex-1 p-4 pt-20 pb-24 overflow-hidden relative">
+           <div className={`grid gap-4 h-full content-center transition-all ${activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'}`}>
+               <LocalVideoPlayer stream={webcamStream} isMuted={isMuted} isVideoOff={isVideoOff} user={user} onPin={()=>setPinnedUserId('local')} isPinned={pinnedUserId==='local'} />
+               {activeParticipants.map(p => <RemoteVideoPlayer key={p.user_id} stream={remoteStreams.get(p.user_id)} participant={p} onPin={()=>setPinnedUserId(p.user_id)} isPinned={pinnedUserId===p.user_id} />)}
+           </div>
         </div>
 
-        {hostEndedMeeting && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-             <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform scale-100 p-6 text-center">
-                 <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
-                    <PhoneOff className="w-8 h-8 text-red-500" />
-                 </div>
-                 <h2 className="text-xl font-bold text-white mb-2">Meeting Ended</h2>
-                 <p className="text-slate-400 text-sm mb-6">The host has ended this meeting for everyone.</p>
-                 <button 
-                   onClick={onEndCall}
-                   className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl transition-all border border-slate-700 hover:border-slate-600 flex items-center justify-center gap-2"
-                 >
-                   <Home className="w-4 h-4" />
-                   Return to Dashboard
-                 </button>
-             </div>
-          </div>
-        )}
-
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-40 w-[95%] max-w-fit">
-          <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-x-auto no-scrollbar">
-             <div className="flex items-center justify-between gap-2 p-2 md:px-6 md:py-3 min-w-max">
-                <button onClick={toggleMute} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isMuted ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-                    {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                </button>
-                <button onClick={toggleVideo} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isVideoOff ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-                    {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
-                </button>
-                <button onClick={toggleScreenShare} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 hidden sm:block ${isScreenSharing ? 'bg-green-600 text-white shadow-lg shadow-green-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-                    <MonitorUp className="w-5 h-5" />
-                </button>
-                <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>
-                <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-                    <Users className="w-5 h-5" />
-                    {(activeParticipants.length > 0 || waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-green-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{activeParticipants.length + 1 + waitingParticipants.length}</span>}
-                </button>
-                <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
-                    <MessageSquare className="w-5 h-5" />
-                    {chatMessages.length > 0 && !showSidebar && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-slate-900"></span>}
-                </button>
-                <div className="w-px h-8 bg-slate-700 mx-1"></div>
-                <button onClick={handleLeave} className="px-4 md:px-6 py-3 md:py-3.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20 flex items-center gap-2 whitespace-nowrap">
-                    <PhoneOff className="w-5 h-5" />
-                    <span className="hidden md:inline">{isHost ? 'End All' : 'Leave'}</span>
-                </button>
-             </div>
-          </div>
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl flex items-center gap-2 p-2">
+            <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getAudioTracks().forEach(t=>t.enabled=!t.enabled); setIsMuted(!isMuted); } }} className={`p-3.5 rounded-xl ${isMuted ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Mic className="w-5 h-5 text-white" /></button>
+            <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getVideoTracks().forEach(t=>t.enabled=!t.enabled); setIsVideoOff(!isVideoOff); } }} className={`p-3.5 rounded-xl ${isVideoOff ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Video className="w-5 h-5 text-white" /></button>
+            <div className="w-px h-8 bg-slate-700 mx-1"></div>
+            <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3.5 rounded-xl relative ${showSidebar === 'participants' ? 'bg-blue-600' : 'bg-slate-800'}`}><Users className="w-5 h-5 text-white" />{(waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900">{waitingParticipants.length}</span>}</button>
+            <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3.5 rounded-xl ${showSidebar === 'chat' ? 'bg-blue-600' : 'bg-slate-800'}`}><MessageSquare className="w-5 h-5 text-white" /></button>
+            <div className="w-px h-8 bg-slate-700 mx-1"></div>
+            <button onClick={onEndCall} className="px-6 py-3.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl flex items-center gap-2"><PhoneOff className="w-5 h-5" /><span>{isHost?'End':'Leave'}</span></button>
         </div>
       </div>
 
       {showSidebar && (
-        <div className="fixed inset-y-0 right-0 z-50 w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full animate-[slideLeft_0.2s_ease-out] shadow-2xl">
-           <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900 pt-safe-top">
-             <h2 className="font-semibold text-white">{showSidebar === 'chat' ? 'In-Call Messages' : 'Participants'}</h2>
-             <button onClick={() => setShowSidebar(null)} className="text-slate-400 hover:text-white p-1 hover:bg-slate-800 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-y-0 right-0 z-50 w-80 bg-slate-900 border-l border-slate-800 flex flex-col shadow-2xl animate-[slideLeft_0.2s_ease-out]">
+           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+             <h2 className="font-semibold text-white">{showSidebar === 'chat' ? 'Chat' : 'Participants'}</h2>
+             <button onClick={() => setShowSidebar(null)}><X className="w-5 h-5 text-slate-400" /></button>
            </div>
            
            {showSidebar === 'chat' && (
              <>
-               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 custom-scrollbar">
-                  {chatMessages.length === 0 && <p className="text-center text-slate-500 text-sm mt-10">No messages yet.</p>}
-                  {chatMessages.map((msg) => (
+               <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                  {chatMessages.map(msg => (
                     <div key={msg.id} className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-semibold text-slate-400">{msg.sender}</span>
-                            <span className="text-[10px] text-slate-600">{msg.time}</span>
-                        </div>
-                        <div className={`px-3 py-2 rounded-2xl text-sm max-w-[85%] ${msg.isSelf ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none'}`}>
-                            {msg.text}
-                        </div>
+                        <span className="text-[10px] text-slate-500 mb-1">{msg.sender} • {msg.time}</span>
+                        <div className={`px-3 py-2 rounded-2xl text-sm ${msg.isSelf ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 rounded-tl-none'}`}>{msg.text}</div>
                     </div>
                   ))}
                </div>
-               <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900 pb-8 md:pb-4">
-                  <div className="relative">
-                    <input type="text" placeholder="Type a message..." className="w-full bg-slate-800 border border-slate-700 rounded-lg py-3 pl-4 pr-12 text-white text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
-                    <button type="submit" className="absolute right-2 top-2 p-1 text-blue-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"><Send className="w-5 h-5" /></button>
-                  </div>
-               </form>
+               <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 flex gap-2"><input type="text" placeholder="Type..." className="flex-1 bg-slate-800 border border-slate-700 rounded-lg py-2 px-3 text-white text-sm outline-none" value={newMessage} onChange={e=>setNewMessage(e.target.value)} /><button type="submit" className="p-2 bg-blue-600 text-white rounded-lg"><Send className="w-4 h-4" /></button></form>
              </>
            )}
            
            {showSidebar === 'participants' && (
-              <div className="flex-1 overflow-y-auto bg-slate-900 custom-scrollbar">
-                 <div className="p-2 space-y-1">
-                    {isHost && waitingParticipants.length > 0 && (
-                        <div className="mb-4 bg-slate-800/50 rounded-xl overflow-hidden border border-slate-700">
-                             <div className="px-3 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
-                                 <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Waiting Room ({waitingParticipants.length})</span>
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                 <button onClick={handleManualSync} disabled={syncing} className="w-full mb-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg flex items-center justify-center gap-2 border border-slate-700 transition-colors">
+                     {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync Participants
+                 </button>
+
+                 {isHost && waitingParticipants.length > 0 && (
+                     <div className="mb-4 bg-blue-900/20 rounded-xl border border-blue-500/30 overflow-hidden">
+                         <div className="px-3 py-2 bg-blue-500/20 text-[10px] font-bold text-blue-400 uppercase tracking-widest">Waiting Room ({waitingParticipants.length})</div>
+                         {waitingParticipants.map(p => (
+                             <div key={p.id} className="p-3 border-b border-blue-500/10 flex items-center justify-between">
+                                 <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{p.name.charAt(0)}</div><span className="text-sm text-white truncate max-w-[100px]">{p.name}</span></div>
+                                 <button onClick={() => storageService.admitParticipant(meetingId, p.user_id)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-colors">Admit</button>
                              </div>
-                             {waitingParticipants.map(p => (
-                                 <div key={p.id} className="flex items-center gap-2 p-3 border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30 transition-colors">
-                                     <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white font-bold">{p.name.charAt(0)}</div>
-                                     <div className="flex-1 min-w-0">
-                                         <p className="text-sm font-medium text-white truncate">{p.name}</p>
-                                         <p className="text-[10px] text-slate-500">Waiting to join</p>
-                                     </div>
-                                     <button 
-                                         onClick={() => handleAdmit(p.user_id)}
-                                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg transition-colors shadow-lg shadow-blue-500/20"
-                                     >
-                                         Admit
-                                     </button>
-                                 </div>
-                             ))}
-                        </div>
-                    )}
-
-                    <div className="px-3 py-2">
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Meeting</span>
-                    </div>
-
-                    <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition-colors">
-                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-600/20">{user.name.charAt(0)}</div>
-                       <div className="flex-1"><p className="text-sm font-medium text-white">{user.name} <span className="text-slate-500">(You)</span></p><p className="text-xs text-blue-400">Host</p></div>
-                       <div className="flex gap-2">
-                           {isMuted ? <MicOff className="w-4 h-4 text-red-500" /> : <Mic className="w-4 h-4 text-slate-500" />}
-                           {isVideoOff ? <VideoOff className="w-4 h-4 text-red-500" /> : <Video className="w-4 h-4 text-slate-500" />}
-                       </div>
-                    </div>
-                    {activeParticipants.map((p) => (
-                       <div key={p.id} className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition-colors">
-                          <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-sm text-white font-bold">{p.name.charAt(0)}</div>
-                          <div className="flex-1"><p className="text-sm font-medium text-white">{p.name}</p><p className="text-xs text-slate-500">Participant</p></div>
-                          <div className="flex gap-2 text-slate-400">
-                             {remoteScreenShares.has(p.user_id) && <MonitorUp className="w-4 h-4 text-green-500" />}
-                             {remoteStreams.has(p.user_id) ? <Video className="w-4 h-4 text-green-500" /> : <div className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-white animate-spin"></div>}
-                          </div>
-                       </div>
-                    ))}
+                         ))}
+                     </div>
+                 )}
+                 <div className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">In Meeting</div>
+                 <div className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">{user.name.charAt(0)}</div>
+                    <div className="flex-1"><p className="text-sm font-medium text-white truncate">{user.name} (You)</p><p className="text-[10px] text-blue-400">Host</p></div>
                  </div>
+                 {activeParticipants.map(p => (
+                    <div key={p.id} className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
+                       <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{p.name.charAt(0)}</div>
+                       <div className="flex-1"><p className="text-sm font-medium text-white truncate">{p.name}</p><p className="text-[10px] text-slate-500">Participant</p></div>
+                    </div>
+                 ))}
               </div>
            )}
         </div>

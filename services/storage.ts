@@ -12,41 +12,27 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export const storageService = {
-  // --- AUTHENTICATION & SESSION ---
-  
+  // --- AUTH & SESSION ---
   login: async (email: string, passwordAttempt: string): Promise<User | null> => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .eq('password', passwordAttempt)
-        .single();
-      
+      const { data, error } = await supabase.from('users').select('*').eq('email', email).eq('password', passwordAttempt).single();
       if (error || !data) return null;
-
       if (data.status === 'active') {
         const user = data as User;
         localStorage.setItem(SESSION_KEY, JSON.stringify(user));
         return user;
       }
       return null;
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   },
 
-  logout: () => {
-    localStorage.removeItem(SESSION_KEY);
-  },
-
+  logout: () => localStorage.removeItem(SESSION_KEY),
   getSession: (): User | null => {
     const session = localStorage.getItem(SESSION_KEY);
     return session ? JSON.parse(session) : null;
   },
 
   // --- APP SETTINGS ---
-
   getAppSettings: async (): Promise<AppSettings> => {
     try {
       const { data } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
@@ -78,7 +64,6 @@ export const storageService = {
   },
 
   // --- MEETINGS ---
-
   getMeetings: async (): Promise<Meeting[]> => {
     const currentUser = storageService.getSession();
     if (!currentUser) return [];
@@ -86,13 +71,10 @@ export const storageService = {
         const { data } = await supabase.from('meetings').select('*').order('date', { ascending: true });
         const meetings = (data || []) as Meeting[];
         if (currentUser.role === UserRole.ADMIN) return meetings;
-        
         const { data: invites } = await supabase.from('meeting_invites').select('meeting_id').eq('user_id', currentUser.id);
         const invitedIds = invites?.map(i => i.meeting_id) || [];
         return meetings.filter(m => m.host === currentUser.name || invitedIds.includes(m.id));
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
   },
 
   createMeeting: async (meeting: Meeting, invitedUserIds: string[] = []): Promise<Meeting[]> => {
@@ -127,8 +109,7 @@ export const storageService = {
     return storageService.getMeetings();
   },
 
-  // --- PARTICIPANTS & SIGNALING ---
-
+  // --- REAL-TIME PARTICIPANTS & LOBBY ---
   joinMeetingRoom: async (meetingId: string, user: User): Promise<'admitted' | 'waiting'> => {
     try {
       const { data: meeting } = await supabase.from('meetings').select('host').eq('id', meetingId).maybeSingle();
@@ -147,17 +128,22 @@ export const storageService = {
 
       return initialStatus;
     } catch (err) {
-      console.error("Join Room Error:", err);
       return 'waiting';
     }
   },
 
-  admitParticipant: async (meetingId: string, userId: string) => {
-    await supabase
-      .from('participants')
-      .update({ status: 'admitted' })
-      .eq('meeting_id', meetingId)
-      .eq('user_id', userId);
+  admitParticipant: async (channel: RealtimeChannel | null, meetingId: string, userId: string) => {
+    // 1. Update Database (Persistence)
+    await supabase.from('participants').update({ status: 'admitted' }).eq('meeting_id', meetingId).eq('user_id', userId);
+    
+    // 2. Broadcast Admission (Instant UI trigger for the client)
+    if (channel) {
+      await channel.send({
+        type: 'broadcast',
+        event: 'admit-action',
+        payload: { userId, meetingId }
+      });
+    }
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
@@ -165,49 +151,59 @@ export const storageService = {
   },
 
   getParticipants: async (meetingId: string): Promise<Participant[]> => {
-    const { data, error } = await supabase
-      .from('participants')
-      .select('*')
-      .eq('meeting_id', meetingId);
-    
-    if (error) {
-      console.error("Fetch Participants Error:", error);
-      return [];
-    }
+    const { data } = await supabase.from('participants').select('*').eq('meeting_id', meetingId);
     return (data || []) as Participant[];
   },
 
+  // Improved subscription using Presence
   subscribeToMeeting: (
-    meetingId: string, 
+    meetingId: string,
+    user: User,
     onParticipantsUpdate: (participants: Participant[]) => void,
-    onSignal: (payload: any) => void
+    onSignal: (payload: any) => void,
+    onAdmitted: () => void
   ): RealtimeChannel => {
-    // Initial Fetch
-    storageService.getParticipants(meetingId).then(onParticipantsUpdate);
-
-    const channel = supabase.channel(`room-${meetingId}`, {
-        config: { broadcast: { self: true } }
+    
+    const channel = supabase.channel(`meeting_room_${meetingId}`, {
+      config: { presence: { key: user.id } }
     });
 
     channel
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, async () => {
-            const updated = await storageService.getParticipants(meetingId);
-            onParticipantsUpdate(updated);
-        })
-        .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload))
-        .subscribe();
+      .on('presence', { event: 'sync' }, () => {
+        // When presence list changes, re-fetch from DB to get latest statuses
+        storageService.getParticipants(meetingId).then(onParticipantsUpdate);
+      })
+      .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload))
+      .on('broadcast', { event: 'admit-action' }, (payload) => {
+          if (payload.payload.userId === user.id) {
+              onAdmitted();
+          }
+          // Refresh list for everyone when someone is admitted
+          storageService.getParticipants(meetingId).then(onParticipantsUpdate);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, () => {
+          storageService.getParticipants(meetingId).then(onParticipantsUpdate);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: user.id,
+            name: user.name,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
 
     return channel;
   },
 
   sendSignal: async (channel: RealtimeChannel | null, signal: any) => {
     if (channel) {
-        await channel.send({ type: 'broadcast', event: 'signal', payload: signal });
+      await channel.send({ type: 'broadcast', event: 'signal', payload: signal });
     }
   },
 
   // --- USERS ---
-
   getUsers: async (): Promise<User[]> => {
     const { data } = await supabase.from('users').select('*').order('name');
     return (data || []) as User[];
@@ -218,8 +214,10 @@ export const storageService = {
     return data as User;
   },
 
+  // Add getUserByToken to fix the error in SetPassword.tsx
   getUserByToken: async (token: string): Promise<User | undefined> => {
-    const { data } = await supabase.from('users').select('*').eq('token', token).single();
+    const { data, error } = await supabase.from('users').select('*').eq('token', token).maybeSingle();
+    if (error || !data) return undefined;
     return data as User;
   },
 
@@ -231,13 +229,9 @@ export const storageService = {
 
   addUser: async (name: string, email: string, role: UserRole): Promise<User | null> => {
     const newUser: User = {
-      id: crypto.randomUUID(),
-      name,
-      email,
-      role,
+      id: crypto.randomUUID(), name, email, role,
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
-      status: 'pending',
-      token: Math.random().toString(36).substring(2)
+      status: 'pending', token: Math.random().toString(36).substring(2)
     };
     const { error } = await supabase.from('users').insert(newUser);
     return error ? null : newUser;

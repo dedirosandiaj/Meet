@@ -188,6 +188,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!countdownActive) {
           startWebcam(); // Start cam early if not in countdown
           // Note: isAdmitted will be confirmed by the real-time subscription update
+          // Optimistically set status so host sees room immediately
           if (initialStatus === 'admitted') {
             setIsAdmitted(true);
           }
@@ -200,9 +201,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         (allParticipants) => {
           // This is the single source of truth for participant state
           const me = allParticipants.find(p => p.user_id === user.id);
-          const amIAdmitted = me?.status === 'admitted';
           
-          if (amIAdmitted !== isAdmitted) {
+          // CRITICAL FIX: Only update isAdmitted if we explicitly find the record.
+          // If record is missing (race condition), trust the initialStatus/current state.
+          if (me) {
+             const amIAdmitted = me.status === 'admitted';
              setIsAdmitted(amIAdmitted);
           }
           

@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Signal,
   WifiOff,
-  ArrowLeft
+  ArrowLeft,
+  Play
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -28,12 +29,10 @@ interface MeetingRoomProps {
   onEndCall: () => void;
 }
 
-// Menggunakan Google STUN server yang stabil
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ]
 };
 
@@ -115,47 +114,62 @@ const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () =
     );
 };
 
-// --- VIDEO TILE (Dengan Logic Display Agresif) ---
+// --- VIDEO TILE (Improved Autoplay Handling) ---
 const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff, connectionState }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [forcePlayNeeded, setForcePlayNeeded] = useState(false);
 
   useEffect(() => {
     const vid = videoRef.current;
     if (vid && stream) {
       vid.srcObject = stream;
+      
+      // Critical for mobile/safari:
+      vid.setAttribute('playsinline', 'true');
+      vid.setAttribute('autoplay', 'true');
+      
       if (isLocal) {
           vid.muted = true;
           vid.volume = 0;
       } else {
-          vid.muted = false;
-          // Force play attempt
-          const playPromise = vid.play();
-          if (playPromise !== undefined) {
-             playPromise.catch(error => {
-                console.log("Autoplay prevented, retrying muted:", error);
-                // Fallback if audio prevents autoplay (rare in conference apps but possible)
-                vid.muted = true; 
-                vid.play();
-             });
-          }
+          vid.muted = false; // Must be false to hear remote audio
       }
+
+      const attemptPlay = async () => {
+          try {
+              await vid.play();
+              setForcePlayNeeded(false);
+          } catch (e) {
+              console.warn("Autoplay blocked:", e);
+              // If blocked, shows a play button overlay
+              setForcePlayNeeded(true);
+          }
+      };
+      
+      attemptPlay();
     }
   }, [stream, isLocal]);
 
+  // Handler for manual play if autoplay was blocked
+  const handleManualPlay = () => {
+      if (videoRef.current) {
+          videoRef.current.play();
+          setForcePlayNeeded(false);
+      }
+  };
+
   const displayName = isLocal ? `${user.name} (You)` : participant?.name || 'Unknown';
   
-  // Show "Connecting" if remote and no stream OR stream inactive OR ICE state is checking/new
+  // Logic: Show connecting if remote AND (no stream OR connection 'new'/'checking')
   const isConnecting = !isLocal && (!stream || connectionState === 'new' || connectionState === 'checking');
-  const isFailed = !isLocal && (connectionState === 'failed' || connectionState === 'disconnected');
+  const isFailed = !isLocal && (connectionState === 'failed' || connectionState === 'disconnected' || connectionState === 'closed');
 
   return (
     <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group">
-      {/* Video Element */}
       <video 
         ref={videoRef} 
         autoPlay 
         playsInline 
-        muted={isLocal} 
         className={`w-full h-full object-cover transition-transform duration-300 ${isLocal ? 'scale-x-[-1]' : ''} ${(isVideoOff || isConnecting || isFailed) ? 'opacity-0' : 'opacity-100'}`} 
       />
       
@@ -170,7 +184,7 @@ const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff, co
           ) : isFailed ? (
             <>
                 <WifiOff className="w-10 h-10 text-red-500 mb-3" />
-                <span className="text-slate-400 text-sm font-medium">Connection Unstable</span>
+                <span className="text-slate-400 text-sm font-medium">Signal Lost</span>
             </>
           ) : (
             <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-4xl font-bold text-white shadow-lg">
@@ -179,16 +193,31 @@ const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff, co
           )}
         </div>
       )}
+      
+      {/* Autoplay Blocker Overlay */}
+      {forcePlayNeeded && !isLocal && !isVideoOff && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <button 
+                onClick={handleManualPlay}
+                className="flex flex-col items-center gap-2 group-hover:scale-110 transition-transform"
+              >
+                  <div className="w-16 h-16 rounded-full bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
+                      <Play className="w-8 h-8 text-white fill-white ml-1" />
+                  </div>
+                  <span className="text-white font-medium text-sm">Click to View</span>
+              </button>
+          </div>
+      )}
 
       {/* Name Tag */}
-      <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl text-white text-sm font-semibold z-20 flex items-center gap-2 shadow-sm">
+      <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl text-white text-sm font-semibold z-20 flex items-center gap-2 shadow-sm pointer-events-none">
         <span>{displayName}</span>
         {isLocal && isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
       </div>
 
-      {/* Connection Debug Indicator (Pojok Kanan Atas) */}
+      {/* Connection Debug Indicator */}
       {!isLocal && (
-        <div className="absolute top-4 right-4 z-20">
+        <div className="absolute top-4 right-4 z-20 pointer-events-none">
             <div className={`px-2 py-1 rounded text-[10px] font-mono font-bold flex items-center gap-1 ${
                 connectionState === 'connected' ? 'bg-green-500/20 text-green-400' : 
                 connectionState === 'failed' ? 'bg-red-500/20 text-red-400' :
@@ -287,10 +316,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => clearInterval(interval);
   }, [meetingId, meeting]);
 
-  // Presence Announcement (Hanya saat status Admitted dan Stream Siap)
+  // Presence Announcement
   useEffect(() => {
       if (isAdmitted && !isWaiting && webcamStream) {
-          console.log("Ready state reached. Broadcasting presence...");
+          console.log("Status: Admitted & Stream Ready. Broadcasting presence...");
           const timer = setTimeout(() => triggerReadySignal(), 1500);
           return () => clearTimeout(timer);
       }
@@ -310,7 +339,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const triggerReadySignal = () => {
      if (channelRef.current) {
-         // Reset state lokal sebelum broadcast
+         // Reset state before broadcasting presence
          peerConnections.current.forEach(pc => pc.close());
          peerConnections.current.clear();
          setRemoteStreams(new Map());
@@ -323,7 +352,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   // --- CORE WEBRTC LOGIC ---
 
   const createPeerConnection = (targetUserId: string) => {
-    // ALWAYS Clean up previous connection to target
+    // 1. Cleanup old PC
     if (peerConnections.current.has(targetUserId)) {
         console.warn(`Cleaning old PC for ${targetUserId}`);
         peerConnections.current.get(targetUserId)?.close();
@@ -333,18 +362,29 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     console.log(`Creating NEW PeerConnection for ${targetUserId}`);
     const pc = new RTCPeerConnection(ICE_SERVERS);
     
-    // 1. ADD LOCAL TRACKS
+    // 2. Add Tracks (Recommended way)
+    // If we have tracks, we add them. This automatically creates transceivers.
+    let hasVideo = false;
+    let hasAudio = false;
+
     if (webcamStreamRef.current) {
         webcamStreamRef.current.getTracks().forEach(track => {
             pc.addTrack(track, webcamStreamRef.current!);
+            if (track.kind === 'video') hasVideo = true;
+            if (track.kind === 'audio') hasAudio = true;
         });
     }
 
-    // 2. ADD TRANSCEIVERS (Crucial for bi-directional media even if negotiation starts one-way)
-    pc.addTransceiver('audio', { direction: 'sendrecv' });
-    pc.addTransceiver('video', { direction: 'sendrecv' });
+    // 3. Fallback Transceivers (recvonly)
+    // If for some reason we don't have a track (e.g. cam off), we still want to RECEIVE tracks.
+    if (!hasVideo) {
+        pc.addTransceiver('video', { direction: 'recvonly' });
+    }
+    if (!hasAudio) {
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
 
-    // 3. HANDLERS
+    // 4. Handlers
     pc.onicecandidate = (e) => { 
         if (e.candidate) {
             storageService.sendSignal(channelRef.current, { 
@@ -355,9 +395,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
     
     pc.ontrack = (e) => {
-        console.log(`Track received from ${targetUserId}:`, e.streams[0]);
+        console.log(`Track received from ${targetUserId}:`, e.track.kind, e.streams[0]);
+        // Only update if we have a valid stream
         if (e.streams[0]) {
-            // Update state dengan membuat Map baru agar React re-render
             setRemoteStreams(prev => {
                 const newMap = new Map(prev);
                 newMap.set(targetUserId, e.streams[0]);
@@ -373,10 +413,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             newMap.set(targetUserId, pc.connectionState);
             return newMap;
         });
-        
-        if (pc.connectionState === 'failed') {
-            console.warn("Connection failed. Consider manual refresh.");
-        }
     };
 
     peerConnections.current.set(targetUserId, pc);
@@ -398,17 +434,22 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         
         const { sdp, candidate } = payload;
         
+        // --- OFFER OPTIONS (CRITICAL FOR MEDIA) ---
+        // Ensure we explicitly ask for audio/video from the remote side
+        const offerOptions = {
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+        };
+
         if (payload.type === 'ready') { 
-            // Remote user is ready. I will initiate the call (Impolite peer)
-            console.log(`User ${from} is READY. Sending OFFER.`);
+            console.log(`User ${from} is READY. Creating OFFER.`);
             const pc = createPeerConnection(from)!; 
-            const offer = await pc.createOffer(); 
+            const offer = await pc.createOffer(offerOptions); 
             await pc.setLocalDescription(offer); 
             storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'offer', sdp: offer } }); 
         
         } else if (payload.type === 'offer') { 
-            console.log(`Received OFFER from ${from}. Sending ANSWER.`);
-            // Received offer. I am the answerer.
+            console.log(`Received OFFER from ${from}. Creating ANSWER.`);
             const pc = createPeerConnection(from)!; 
             await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
             const ans = await pc.createAnswer(); 
@@ -429,7 +470,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             const pc = peerConnections.current.get(from); 
             if (pc && candidate) {
                 if (pc.remoteDescription) {
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn("Candidate add failed:", e));
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn("Candidate error:", e));
                 } else {
                     const queue = iceCandidateQueues.current.get(from) || [];
                     queue.push(new RTCIceCandidate(candidate));
@@ -445,9 +486,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const processCandidateQueue = async (userId: string, pc: RTCPeerConnection) => {
       const queue = iceCandidateQueues.current.get(userId) || [];
       if (queue.length > 0) {
-          console.log(`Flushing ${queue.length} candidates for ${userId}`);
+          console.log(`Processing ${queue.length} queued candidates for ${userId}`);
           for (const c of queue) {
-              await pc.addIceCandidate(c).catch(e => console.warn("Queued candidate failed:", e));
+              await pc.addIceCandidate(c).catch(e => console.warn("Queued candidate error:", e));
           }
           iceCandidateQueues.current.delete(userId);
       }

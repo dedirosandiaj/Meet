@@ -20,6 +20,57 @@ const triggerToast = (type: 'success' | 'error', title: string, message: string)
     window.dispatchEvent(event);
 };
 
+// --- CALENDAR LINK GENERATOR ---
+const formatForCalendarUrl = (dateStr: string, timeStr: string) => {
+    // Convert meeting date/time to ISO string without punctuation for URLs (YYYYMMDDTHHMMSS)
+    // Assume Duration is 1 Hour for simplicity
+    
+    let targetDate = new Date();
+    const now = new Date();
+
+    // Parse Date
+    if (dateStr === 'Today') {
+        targetDate = now;
+    } else if (dateStr === 'Tomorrow') {
+        targetDate.setDate(now.getDate() + 1);
+    } else {
+        // Expect YYYY-MM-DD from HTML input
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) targetDate = parsed;
+    }
+
+    // Parse Time (HH:MM)
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    targetDate.setHours(hours || 0, minutes || 0, 0, 0);
+
+    const endDate = new Date(targetDate);
+    endDate.setHours(targetDate.getHours() + 1); // Add 1 hour duration
+
+    const toISO = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+
+    return {
+        start: toISO(targetDate),
+        end: toISO(endDate),
+        rawStart: targetDate,
+        rawEnd: endDate
+    };
+};
+
+const generateCalendarLinks = (meeting: Meeting, joinUrl: string) => {
+    const { start, end } = formatForCalendarUrl(meeting.date, meeting.time);
+    const title = encodeURIComponent(meeting.title);
+    const details = encodeURIComponent(`Join Meeting: ${joinUrl}\n\nMeeting ID: ${meeting.id}`);
+    const location = encodeURIComponent("Online Meeting");
+
+    // Google Calendar Link
+    const google = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+
+    // Outlook Web Link
+    const outlook = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&startdt=${start}&enddt=${end}&subject=${title}&body=${details}&location=${location}`;
+
+    return { google, outlook };
+};
+
 export const emailService = {
   /**
    * Mengirim email menggunakan EmailJS.
@@ -124,6 +175,9 @@ ${appSettings.title} Team`;
     const subject = `Meeting Invitation: ${meeting.title}`;
     const baseUrl = window.location.origin;
     const joinUrl = `${baseUrl}/join/${meeting.id}`;
+    
+    // Generate Calendar Links
+    const { google, outlook } = generateCalendarLinks(meeting, joinUrl);
 
     // PLAIN TEXT TEMPLATE FOR MEETING
     const body = `Meeting Invitation
@@ -140,11 +194,61 @@ Meeting ID: ${meeting.id}
 Join Link:
 ${joinUrl}
 
+---
+ADD TO CALENDAR:
+
+Google Calendar:
+${google}
+
+Outlook Calendar:
+${outlook}
+---
+
 Please join at the scheduled time.
 
 ${appSettings.title} Team`;
 
     return emailService.sendEmail(email, subject, body, appSettings);
+  },
+
+  // --- NEW: GENERATE & DOWNLOAD ICS FILE ---
+  downloadICSFile: (meeting: Meeting) => {
+      const baseUrl = window.location.origin;
+      const joinUrl = `${baseUrl}/join/${meeting.id}`;
+      const { start, end, rawStart } = formatForCalendarUrl(meeting.date, meeting.time);
+      
+      // Format Date for ICS (YYYYMMDDTHHMMSSZ)
+      const formatDate = (date: Date) => date.toISOString().replace(/-|:|\.\d\d\d/g, "");
+      const now = formatDate(new Date());
+      const dtStart = formatDate(rawStart);
+      const dtEnd = formatDate(new Date(rawStart.getTime() + 60 * 60 * 1000)); // +1 Hour
+
+      const icsContent = [
+          'BEGIN:VCALENDAR',
+          'VERSION:2.0',
+          'PRODID:-//ZoomClone AI//Meeting//EN',
+          'CALSCALE:GREGORIAN',
+          'METHOD:PUBLISH',
+          'BEGIN:VEVENT',
+          `UID:${meeting.id}@zoomclone.ai`,
+          `DTSTAMP:${now}`,
+          `DTSTART:${dtStart}`,
+          `DTEND:${dtEnd}`,
+          `SUMMARY:${meeting.title}`,
+          `DESCRIPTION:Join Meeting: ${joinUrl}\\n\\nMeeting ID: ${meeting.id}`,
+          'LOCATION:Online Meeting',
+          'STATUS:CONFIRMED',
+          'END:VEVENT',
+          'END:VCALENDAR'
+      ].join('\r\n');
+
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.setAttribute('download', `meeting-${meeting.id}.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
   },
 
   openMailClient: (to: string, subject: string, body: string) => {

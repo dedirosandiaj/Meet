@@ -33,7 +33,8 @@ import {
   RefreshCw,
   Search,
   Send,
-  Briefcase
+  Briefcase,
+  Download
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -504,6 +505,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
   };
 
+  const handleDownloadICS = (meeting: Meeting) => {
+     emailService.downloadICSFile(meeting);
+  };
+
   // Misc Helpers
   const handleCopyId = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -811,7 +816,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             <form onSubmit={handleEditUserSubmit} className="p-6 space-y-4">
               <div><label className="block text-sm text-slate-400 mb-1">Full Name</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editUserForm.name} onChange={(e) => setEditUserForm({...editUserForm, name: e.target.value})} required /></div>
               <div><label className="block text-sm text-slate-400 mb-1">Email Address</label><input type="email" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editUserForm.email} onChange={(e) => setEditUserForm({...editUserForm, email: e.target.value})} required /></div>
-              <div><label className="block text-sm text-slate-400 mb-1">Role</label><select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none appearance-none" value={editUserForm.role} onChange={(e) => setEditUserForm({...editUserForm, role: e.target.value as UserRole})}><option value={UserRole.MEMBER}>Member (Staff)</option><option value={UserRole.ADMIN}>Admin</option><option value={UserRole.CLIENT}>Client (Guest)</option></select></div>
+              <div><label className="block text-sm text-slate-400 mb-1">Role</label><select className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none appearance-none" value={editUserForm.role} onChange={(e) => setAddUserForm({...addUserForm, role: e.target.value as UserRole})}><option value={UserRole.MEMBER}>Member (Staff)</option><option value={UserRole.ADMIN}>Admin</option><option value={UserRole.CLIENT}>Client (Guest)</option></select></div>
               <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowEditUserModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">Save Changes</button></div>
             </form>
           </div>
@@ -825,11 +830,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             <div className="p-6 text-center border-b border-slate-800">
               <div className="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-green-500/20"><Check className="w-6 h-6 text-green-500" /></div>
               <h3 className="text-xl font-bold text-white mb-1">Meeting Created!</h3>
-              <p className="text-slate-400 text-sm">Share the ID below to invite others.</p>
+              <p className="text-slate-400 text-sm">Share the ID or invite file below.</p>
             </div>
             <div className="p-6 space-y-4">
               <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting Title</label><div className="text-white font-medium text-lg truncate">{createdMeeting.title}</div></div>
               <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting ID</label><div className="flex items-center gap-2"><div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg py-3 px-4 text-slate-200 font-mono text-xl md:text-2xl tracking-widest text-center">{createdMeeting.id}</div><button onClick={(e) => handleCopyId(createdMeeting.id, e)} className={`p-3 rounded-lg transition-all border ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}>{copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}</button><button onClick={(e) => handleShareMeeting(createdMeeting, e)} className={`p-3 rounded-lg transition-all border ${sharedId === createdMeeting.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Share2 className="w-6 h-6" /></button></div></div>
+              
+              {/* ICS DOWNLOAD BUTTON */}
+              <button 
+                  onClick={() => handleDownloadICS(createdMeeting)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                  <Download className="w-5 h-5" />
+                  Download Invite File (.ics)
+              </button>
             </div>
             <div className="p-4 bg-slate-950/50 border-t border-slate-800 flex gap-3"><button onClick={() => handleCloseCreatedModal(false)} className="flex-1 py-2.5 text-slate-300 hover:bg-slate-800 rounded-xl font-medium transition-colors">Close</button><button onClick={() => handleCloseCreatedModal(true)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-600/20 transition-all active:scale-95">Join Now</button></div>
           </div>

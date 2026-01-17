@@ -132,11 +132,10 @@ export const storageService = {
   joinMeetingRoom: async (meetingId: string, user: User): Promise<'admitted' | 'waiting'> => {
     try {
       const { data: meeting } = await supabase.from('meetings').select('host').eq('id', meetingId).maybeSingle();
-      const isHost = meeting && meeting.host === user.name;
+      const isHost = meeting && meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
       const isStaff = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
       const initialStatus = (isHost || isStaff) ? 'admitted' : 'waiting';
 
-      // Use UPSERT to prevent primary key conflicts and handle re-joins
       await supabase.from('participants').upsert({
           meeting_id: meetingId,
           user_id: user.id,
@@ -154,7 +153,11 @@ export const storageService = {
   },
 
   admitParticipant: async (meetingId: string, userId: string) => {
-      await supabase.from('participants').update({ status: 'admitted' }).eq('meeting_id', meetingId).eq('user_id', userId);
+    await supabase
+      .from('participants')
+      .update({ status: 'admitted' })
+      .eq('meeting_id', meetingId)
+      .eq('user_id', userId);
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
@@ -162,7 +165,15 @@ export const storageService = {
   },
 
   getParticipants: async (meetingId: string): Promise<Participant[]> => {
-    const { data } = await supabase.from('participants').select('*').eq('meeting_id', meetingId);
+    const { data, error } = await supabase
+      .from('participants')
+      .select('*')
+      .eq('meeting_id', meetingId);
+    
+    if (error) {
+      console.error("Fetch Participants Error:", error);
+      return [];
+    }
     return (data || []) as Participant[];
   },
 

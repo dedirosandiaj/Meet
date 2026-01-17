@@ -153,15 +153,6 @@ const ZoomableView: React.FC<ZoomableViewProps> = ({ children, onTogglePin, isPi
   );
 };
 
-const AudioIndicator = ({ level }: { level: number }) => {
-    const h2 = Math.max(4, level * 0.3);
-    return (
-        <div className="flex items-center gap-0.5 h-6">
-            <div className={`w-1 rounded-full transition-all duration-75 ${level > 10 ? 'bg-green-500' : 'bg-slate-500'}`} style={{ height: `${h2}px` }}></div>
-        </div>
-    );
-};
-
 const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user, onPin, isPinned }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFit, setIsFit] = useState(isScreenSharing);
@@ -212,7 +203,19 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [newMessage, setNewMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
 
-  // LOGIKA UTAMA: Gabungan Join & Subscribe
+  // Helper function to update lists from raw participants data
+  const updateParticipantLists = (participants: Participant[]) => {
+      const me = participants.find(p => p.user_id === user.id);
+      if (me) setIsAdmitted(me.status === 'admitted');
+      
+      const admitted = participants.filter(p => p.status === 'admitted' && p.user_id !== user.id);
+      const waiting = participants.filter(p => p.status === 'waiting');
+      
+      setActiveParticipants(admitted);
+      setWaitingParticipants(waiting);
+  };
+
+  // LOGIKA UTAMA: Gabungan Join, Subscribe & Polling Fallback
   useEffect(() => {
     const startup = async () => {
       const meetings = await storageService.getMeetings();
@@ -220,31 +223,35 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!found) { setLoading(false); return; }
       setMeeting(found);
 
-      // Register ke DB segera
+      // Register ke DB
       const status = await storageService.joinMeetingRoom(meetingId, user);
       setIsAdmitted(status === 'admitted');
 
-      // Kalkulasi countdown
+      // Countdown setup
       const tDate = parseMeetingDateTime(found.date, found.time);
       setTargetDate(tDate);
       const shouldWait = found.status !== 'live' && tDate > new Date();
       setIsWaiting(shouldWait);
 
-      // Start Realtime
+      // 1. Realtime Subscription
       const channel = storageService.subscribeToMeeting(meetingId, 
-        (participants) => {
-          const me = participants.find(p => p.user_id === user.id);
-          if (me) setIsAdmitted(me.status === 'admitted');
-          setActiveParticipants(participants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
-          setWaitingParticipants(participants.filter(p => p.status === 'waiting'));
-        },
+        (participants) => updateParticipantLists(participants),
         (signal) => handleSignal(signal)
       );
       channelRef.current = channel;
 
+      // 2. Polling Fallback (Backup jika Realtime gagal)
+      const pollingInterval = setInterval(async () => {
+          const pts = await storageService.getParticipants(meetingId);
+          updateParticipantLists(pts);
+      }, 3000);
+
       if (!shouldWait) startWebcam();
       setLoading(false);
+      
+      return () => clearInterval(pollingInterval);
     };
+    
     startup();
     return () => performCleanup();
   }, [meetingId]);
@@ -259,9 +266,15 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleManualSync = async () => {
       setSyncing(true);
       const pts = await storageService.getParticipants(meetingId);
-      setActiveParticipants(pts.filter(p => p.status === 'admitted' && p.user_id !== user.id));
-      setWaitingParticipants(pts.filter(p => p.status === 'waiting'));
+      updateParticipantLists(pts);
       setTimeout(() => setSyncing(false), 800);
+  };
+
+  const handleAdmit = async (participantId: string) => {
+      // Optimistic update for UI feel
+      setWaitingParticipants(prev => prev.filter(p => p.user_id !== participantId));
+      await storageService.admitParticipant(meetingId, participantId);
+      // Actual refresh will be handled by polling or realtime
   };
 
   const startWebcam = async () => {
@@ -314,7 +327,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   if (isWaiting && meeting && targetDate) return <CountdownView targetDate={targetDate} meeting={meeting} onBack={onEndCall} onComplete={() => { setIsWaiting(false); startWebcam(); }} />;
   if (!isAdmitted && meeting) return <WaitingRoomView meeting={meeting} onLeave={onEndCall} />;
 
-  const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
+  // Precise Host Detection
+  const isHost = meeting?.host.trim().toLowerCase() === user.name.trim().toLowerCase() || user.role === UserRole.ADMIN;
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
@@ -337,7 +351,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getAudioTracks().forEach(t=>t.enabled=!t.enabled); setIsMuted(!isMuted); } }} className={`p-3.5 rounded-xl ${isMuted ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Mic className="w-5 h-5 text-white" /></button>
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getVideoTracks().forEach(t=>t.enabled=!t.enabled); setIsVideoOff(!isVideoOff); } }} className={`p-3.5 rounded-xl ${isVideoOff ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Video className="w-5 h-5 text-white" /></button>
             <div className="w-px h-8 bg-slate-700 mx-1"></div>
-            <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3.5 rounded-xl relative ${showSidebar === 'participants' ? 'bg-blue-600' : 'bg-slate-800'}`}><Users className="w-5 h-5 text-white" />{(waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900">{waitingParticipants.length}</span>}</button>
+            <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3.5 rounded-xl relative ${showSidebar === 'participants' ? 'bg-blue-600' : 'bg-slate-800'}`}><Users className="w-5 h-5 text-white" />{(isHost && waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{waitingParticipants.length}</span>}</button>
             <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3.5 rounded-xl ${showSidebar === 'chat' ? 'bg-blue-600' : 'bg-slate-800'}`}><MessageSquare className="w-5 h-5 text-white" /></button>
             <div className="w-px h-8 bg-slate-700 mx-1"></div>
             <button onClick={onEndCall} className="px-6 py-3.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl flex items-center gap-2"><PhoneOff className="w-5 h-5" /><span>{isHost?'End':'Leave'}</span></button>
@@ -375,9 +389,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                      <div className="mb-4 bg-blue-900/20 rounded-xl border border-blue-500/30 overflow-hidden">
                          <div className="px-3 py-2 bg-blue-500/20 text-[10px] font-bold text-blue-400 uppercase tracking-widest">Waiting Room ({waitingParticipants.length})</div>
                          {waitingParticipants.map(p => (
-                             <div key={p.id} className="p-3 border-b border-blue-500/10 flex items-center justify-between">
-                                 <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{p.name.charAt(0)}</div><span className="text-sm text-white truncate max-w-[100px]">{p.name}</span></div>
-                                 <button onClick={() => storageService.admitParticipant(meetingId, p.user_id)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-colors">Admit</button>
+                             <div key={p.user_id} className="p-3 border-b border-blue-500/10 flex items-center justify-between">
+                                 <div className="flex items-center gap-2"><div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{p.name.charAt(0)}</div><span className="text-sm text-white truncate max-w-[100px] font-medium">{p.name}</span></div>
+                                 <button onClick={() => handleAdmit(p.user_id)} className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded-lg transition-colors">Admit</button>
                              </div>
                          ))}
                      </div>
@@ -388,7 +402,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                     <div className="flex-1"><p className="text-sm font-medium text-white truncate">{user.name} (You)</p><p className="text-[10px] text-blue-400">Host</p></div>
                  </div>
                  {activeParticipants.map(p => (
-                    <div key={p.id} className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
+                    <div key={p.user_id} className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white">{p.name.charAt(0)}</div>
                        <div className="flex-1"><p className="text-sm font-medium text-white truncate">{p.name}</p><p className="text-[10px] text-slate-500">Participant</p></div>
                     </div>

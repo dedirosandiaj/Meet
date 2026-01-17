@@ -68,7 +68,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Meeting Modal States
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showInstantModal, setShowInstantModal] = useState(false); // NEW: Instant Meeting Setup
+  const [showInstantModal, setShowInstantModal] = useState(false); 
   const [showEditModal, setShowEditModal] = useState(false);
   
   // User Modal States
@@ -90,8 +90,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   // Loading state for sending emails
   const [sendingResetId, setSendingResetId] = useState<string | null>(null);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
-  const [isAddingUser, setIsAddingUser] = useState(false); // New loading state for adding user
-  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false); // New loading state for creating/sending emails
+  const [isAddingUser, setIsAddingUser] = useState(false); 
+  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
 
   // Form States
   const [joinId, setJoinId] = useState('');
@@ -137,11 +137,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- ROUTING EFFECT ---
-  // Listen for popstate (Browser Back/Forward buttons)
   useEffect(() => {
     const handlePopState = () => {
       const tab = getTabFromUrl();
-      // Access control check
       if (!isAdmin && (tab === 'users' || tab === 'settings')) {
         setActiveTab('meetings');
         window.history.replaceState({}, '', '/dashboard/meetings');
@@ -154,7 +152,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     return () => window.removeEventListener('popstate', handlePopState);
   }, [isAdmin]);
 
-  // Initial access check
   useEffect(() => {
     const tab = getTabFromUrl();
     if (!isAdmin && (tab === 'users' || tab === 'settings')) {
@@ -178,18 +175,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       setIsLoading(true);
       const meetingData = await storageService.getMeetings();
       setMeetings(meetingData);
-      
-      // Always fetch users now to populate the invite lists in modals
       const userData = await storageService.getUsers();
       setAllUsers(userData);
-      
       setIsLoading(false);
     };
 
     fetchData();
   }, [isAdmin, activeTab]);
 
-  // Sync settings form with prop changes
   useEffect(() => {
     setSettingsForm({
         title: appSettings.title,
@@ -197,14 +190,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     });
   }, [appSettings]);
 
-  // Close mobile menu when tab changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
 
   // --- ACTIONS ---
 
-  // Settings Actions
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingSettings(true);
@@ -212,7 +203,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
 
     try {
         const newSettings = await storageService.updateAppSettings({
-            ...appSettings, // Preserve existing settings like keys
+            ...appSettings,
             title: settingsForm.title,
             iconUrl: settingsForm.iconUrl
         });
@@ -230,7 +221,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Limit to 2MB
     if (file.size > 2 * 1024 * 1024) {
         alert("Image too large. Please select an image under 2MB.");
         return;
@@ -240,7 +230,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
-            // Resize image to max 192x192 for performance
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const maxSize = 192;
@@ -264,7 +253,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             canvas.height = height;
             ctx?.drawImage(img, 0, 0, width, height);
             
-            // Convert to Base64
             const dataUrl = canvas.toDataURL('image/png', 0.8);
             setSettingsForm(prev => ({ ...prev, iconUrl: dataUrl }));
         };
@@ -279,7 +267,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       fileInputRef.current?.click();
   };
 
-  // Meeting Actions
   const handleDeleteClick = (meeting: Meeting, e: React.MouseEvent) => {
     e.stopPropagation();
     setMeetingToDelete(meeting);
@@ -331,23 +318,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     setEditingMeeting(null);
   };
 
-  // User Actions
   const handleAddUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (addUserForm.name && addUserForm.email) {
       setIsAddingUser(true);
       try {
-        // 1. Save to Database
         const newUser = await storageService.addUser(addUserForm.name, addUserForm.email, addUserForm.role);
         
         if (newUser && newUser.token) {
-            // 2. Automatically Send Activation Email
             const baseUrl = window.location.origin;
             const inviteUrl = `${baseUrl}/setup/${newUser.token}`;
             await emailService.sendInvite(newUser.email, newUser.name, inviteUrl, appSettings);
         }
 
-        // 3. Update UI
         const updatedUsers = await storageService.getUsers();
         setAllUsers(updatedUsers);
         setShowAddUserModal(false);
@@ -387,7 +370,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   };
 
   const handleDeleteUserClick = (targetUser: User) => {
-    if (targetUser.id === user.id) return; // Prevent self-delete
+    if (targetUser.id === user.id) return;
     setUserToDelete(targetUser);
   };
 
@@ -399,26 +382,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
   };
 
-  // --- TOKEN GENERATOR HELPER ---
   const ensureUserToken = async (targetUser: User): Promise<string> => {
       let token = targetUser.token;
       if (!token) {
         token = await storageService.generateUserToken(targetUser.id) || '';
       }
       return token;
-  };
-
-  const handleCopyInviteLink = async (targetUser: User) => {
-    const token = await ensureUserToken(targetUser);
-    if (!token) return;
-
-    const baseUrl = window.location.origin;
-    const inviteUrl = `${baseUrl}/setup/${token}`;
-    const message = `👋 Hello ${targetUser.name},\n\nYou have been invited to join the ${appSettings.title} workspace.\n\nPlease click the link below to set your password and activate your account:\n\n🔗 ${inviteUrl}`;
-
-    navigator.clipboard.writeText(message);
-    setInviteCopiedId(targetUser.id);
-    setTimeout(() => setInviteCopiedId(null), 2000);
   };
 
   const handleSendInviteEmail = async (targetUser: User) => {
@@ -433,10 +402,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         const baseUrl = window.location.origin;
         const inviteUrl = `${baseUrl}/setup/${token}`;
         
-        // Wait for email service
         const success = await emailService.sendInvite(targetUser.email, targetUser.name, inviteUrl, appSettings);
         
-        // Only show success alert if true (Error alert handled by service)
         if (success) {
             const event = new CustomEvent('zoomclone-toast', {
                 detail: {
@@ -454,24 +421,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
   };
 
-  const handleCopyResetLink = async (targetUser: User) => {
-    const newToken = await storageService.generateUserToken(targetUser.id);
-    if (!newToken) return;
-
-    const baseUrl = window.location.origin;
-    const resetUrl = `${baseUrl}/reset/${newToken}`;
-    const message = `🔐 Hi ${targetUser.name},\n\nA password reset was requested for your account.\n\nPlease click the link below to create a new password:\n\n🔗 ${resetUrl}\n\nThis link is valid for one-time use.`;
-
-    navigator.clipboard.writeText(message);
-    setInviteCopiedId(targetUser.id);
-    setTimeout(() => setInviteCopiedId(null), 2000);
-    
-    const updatedUsers = await storageService.getUsers();
-    setAllUsers(updatedUsers);
-  };
-
   const handleSendResetEmail = async (targetUser: User) => {
-    setSendingResetId(targetUser.id); // Set loading state for specific user
+    setSendingResetId(targetUser.id);
     try {
         const newToken = await storageService.generateUserToken(targetUser.id);
         if (!newToken) return;
@@ -479,10 +430,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         const baseUrl = window.location.origin;
         const resetUrl = `${baseUrl}/reset/${newToken}`;
         
-        // Wait for email service result
         const success = await emailService.sendPasswordReset(targetUser.email, targetUser.name, resetUrl, appSettings);
         
-        // Show success notification if sent successfully
         if (success) {
             const event = new CustomEvent('zoomclone-toast', {
                 detail: {
@@ -494,17 +443,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             window.dispatchEvent(event);
         }
         
-        // Refresh to show updated token state if needed
         const updatedUsers = await storageService.getUsers();
         setAllUsers(updatedUsers);
     } catch (e) {
         console.error(e);
     } finally {
-        setSendingResetId(null); // Clear loading state
+        setSendingResetId(null);
     }
   };
 
-  // Misc Helpers
   const handleCopyId = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     navigator.clipboard.writeText(id);
@@ -523,29 +470,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   };
 
   const generateMeetingId = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let result = '';
-    for (let i = 0; i < 5; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
+    // FIX: Gunakan UUID, bukan string pendek 5 karakter.
+    // Database Supabase kemungkinan menggunakan tipe 'uuid' untuk kolom ID.
+    return crypto.randomUUID();
   };
 
   const handleInstantMeetingClick = () => {
-    // Open a simple modal to select participants before starting
-    setSelectedParticipants(new Set()); // Reset selection
+    setSelectedParticipants(new Set());
     setShowInstantModal(true);
   };
 
-  // Helper to send emails to participants
   const sendMeetingEmails = async (meeting: Meeting, participantIds: string[]) => {
     if (participantIds.length === 0) return;
     
-    // Find full user objects from IDs
     const usersToEmail = allUsers.filter(u => participantIds.includes(u.id));
     
-    // Send emails sequentially or in parallel
-    // Using parallel here for speed, though EmailJS has rate limits (be careful with large lists)
     const emailPromises = usersToEmail.map(u => 
         emailService.sendMeetingInvite(u.email, u.name, meeting, appSettings)
     );
@@ -569,13 +508,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         status: 'live'
       };
       
-      // Fix: Cast to string[] to resolve 'unknown[]' type inference error
       const participantIds = Array.from(selectedParticipants) as string[];
       
-      // 1. Create in DB
       const updated = await storageService.createMeeting(newMeeting, participantIds);
-      
-      // 2. Send Emails to invited
       await sendMeetingEmails(newMeeting, participantIds);
       
       setMeetings(updated);
@@ -583,6 +518,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       setShowInstantModal(false);
     } catch (err) {
       console.error("Failed to create instant meeting", err);
+      // Trigger toast if needed
     } finally {
       setIsCreatingMeeting(false);
     }
@@ -591,7 +527,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (joinId.trim()) {
-      onJoinMeeting(joinId);
+      onJoinMeeting(joinId.trim());
       setShowJoinModal(false);
       setJoinId('');
     }
@@ -614,19 +550,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         status: 'upcoming'
       };
       
-      // Fix: Cast to string[] to resolve 'unknown[]' type inference error
       const participantIds = Array.from(selectedParticipants) as string[];
       
-      // 1. Create in DB
       const updated = await storageService.createMeeting(newMeeting, participantIds);
-      
-      // 2. Send Emails
       await sendMeetingEmails(newMeeting, participantIds);
 
       setMeetings(updated);
       setShowScheduleModal(false);
       setScheduleForm({ title: '', date: '', time: '' });
-      setSelectedParticipants(new Set()); // Reset
+      setSelectedParticipants(new Set());
       setCreatedMeeting(newMeeting);
     } catch (err) {
       console.error("Failed to schedule meeting", err);
@@ -700,7 +632,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
     }
   };
 
-  // Helper for rendering user list
   const renderUserSelectionList = () => (
       <div className="border border-slate-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
           {allUsers.filter(u => u.id !== user.id).map(u => (
@@ -721,7 +652,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
       </div>
   );
 
-  // Filter users based on active management tab
   const getFilteredUsers = () => {
       if (userManageTab === 'internal') {
           return allUsers.filter(u => u.role === UserRole.ADMIN || u.role === UserRole.MEMBER);
@@ -734,7 +664,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
       
-      {/* DELETE MEETING MODAL */}
       {meetingToDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
@@ -756,7 +685,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
       )}
 
-      {/* DELETE USER MODAL */}
       {userToDelete && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
@@ -778,7 +706,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
       )}
 
-      {/* ADD USER MODAL */}
       {showAddUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -802,7 +729,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
       )}
 
-      {/* EDIT USER MODAL */}
       {showEditUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -820,7 +746,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         </div>
       )}
 
-      {/* MEETING CREATED SUCCESS MODAL */}
       {createdMeeting && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform scale-100 transition-all max-h-[90vh] overflow-y-auto">
@@ -831,388 +756,409 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
             </div>
             <div className="p-6 space-y-4">
               <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting Title</label><div className="text-white font-medium text-lg truncate">{createdMeeting.title}</div></div>
-              <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting ID</label><div className="flex items-center gap-2"><div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg py-3 px-4 text-slate-200 font-mono text-xl md:text-2xl tracking-widest text-center">{createdMeeting.id}</div><button onClick={(e) => handleCopyId(createdMeeting.id, e)} className={`p-3 rounded-lg transition-all border ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}>{copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}</button><button onClick={(e) => handleShareMeeting(createdMeeting, e)} className={`p-3 rounded-lg transition-all border ${sharedId === createdMeeting.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Share2 className="w-6 h-6" /></button></div></div>
+              <div><label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Meeting ID</label><div className="flex items-center gap-2"><div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg py-3 px-4 text-slate-200 font-mono text-sm md:text-base tracking-widest text-center truncate">{createdMeeting.id}</div><button onClick={(e) => handleCopyId(createdMeeting.id, e)} className={`p-3 rounded-lg transition-all border ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}>{copied ? <Check className="w-6 h-6" /> : <Copy className="w-6 h-6" />}</button><button onClick={(e) => handleShareMeeting(createdMeeting, e)} className={`p-3 rounded-lg transition-all border ${sharedId === createdMeeting.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Share2 className="w-6 h-6" /></button></div></div>
             </div>
             <div className="p-4 bg-slate-950/50 border-t border-slate-800 flex gap-3"><button onClick={() => handleCloseCreatedModal(false)} className="flex-1 py-2.5 text-slate-300 hover:bg-slate-800 rounded-xl font-medium transition-colors">Close</button><button onClick={() => handleCloseCreatedModal(true)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-600/20 transition-all active:scale-95">Join Now</button></div>
           </div>
         </div>
       )}
 
-      {/* JOIN MEETING MODAL */}
       {showJoinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Join Meeting</h3><button onClick={() => setShowJoinModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button></div>
-            <form onSubmit={handleJoinSubmit} className="p-6 space-y-4"><div><label className="block text-sm text-slate-400 mb-1">Meeting ID</label><div className="relative"><LinkIcon className="absolute left-3 top-3 w-5 h-5 text-slate-500" /><input type="text" placeholder="Enter ID" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-600 outline-none uppercase" value={joinId} onChange={(e) => setJoinId(e.target.value.toUpperCase())} maxLength={5} autoFocus /></div></div><div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowJoinModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" disabled={!joinId.trim()} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg disabled:opacity-50">Join</button></div></form>
+            <form onSubmit={handleJoinSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Meeting ID</label>
+                <div className="relative">
+                  <LinkIcon className="absolute left-3 top-3 w-5 h-5 text-slate-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Enter ID" 
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" 
+                    value={joinId} 
+                    onChange={(e) => setJoinId(e.target.value)} 
+                    required 
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end pt-2"><button type="submit" className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg shadow-blue-500/20 transition-all">Join Meeting</button></div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* INSTANT MEETING SETUP MODAL */}
-      {showInstantModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto flex flex-col">
-             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Instant Meeting</h3><button onClick={() => setShowInstantModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
-             <div className="p-6 space-y-4 flex-1 overflow-y-auto">
-                <p className="text-sm text-slate-400">Select participants to invite (optional):</p>
-                {renderUserSelectionList()}
-             </div>
-             <div className="p-4 border-t border-slate-800 flex justify-end gap-3">
-                <button onClick={() => setShowInstantModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
-                <button onClick={handleConfirmInstantMeeting} disabled={isCreatingMeeting} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50">
-                    {isCreatingMeeting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Start Meeting
-                </button>
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* SCHEDULE MEETING MODAL */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Schedule Meeting</h3><button onClick={() => setShowScheduleModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
+             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Schedule Meeting</h3><button onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button></div>
              <form onSubmit={handleScheduleSubmit} className="p-6 space-y-4">
-                <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.title} onChange={e => setScheduleForm({...scheduleForm, title: e.target.value})} required/></div>
-                <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.date} onChange={e => setScheduleForm({...scheduleForm, date: e.target.value})} required/></div><div><label className="block text-sm text-slate-400 mb-1">Time</label><input type="time" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={scheduleForm.time} onChange={e => setScheduleForm({...scheduleForm, time: e.target.value})} required/></div></div>
-                <div>
-                    <label className="block text-sm text-slate-400 mb-1">Invite Participants</label>
-                    {renderUserSelectionList()}
+                <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" placeholder="Weekly Standup" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={scheduleForm.title} onChange={(e) => setScheduleForm({...scheduleForm, title: e.target.value})} required /></div>
+                <div className="grid grid-cols-2 gap-4">
+                   <div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={scheduleForm.date} onChange={(e) => setScheduleForm({...scheduleForm, date: e.target.value})} required /></div>
+                   <div><label className="block text-sm text-slate-400 mb-1">Time</label><input type="time" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={scheduleForm.time} onChange={(e) => setScheduleForm({...scheduleForm, time: e.target.value})} required /></div>
                 </div>
-                <div className="flex justify-end gap-3 pt-2">
-                    <button type="button" onClick={() => setShowScheduleModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button>
-                    <button type="submit" disabled={isCreatingMeeting} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 disabled:opacity-50">
-                        {isCreatingMeeting && <Loader2 className="w-4 h-4 animate-spin" />}
-                        Save & Invite
-                    </button>
-                </div>
+                <div><label className="block text-sm text-slate-400 mb-2">Invite Participants</label>{renderUserSelectionList()}</div>
+                <div className="flex justify-end pt-2"><button type="submit" disabled={isCreatingMeeting} className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50">{isCreatingMeeting ? 'Scheduling...' : 'Schedule'}</button></div>
              </form>
           </div>
         </div>
       )}
-      
-      {showEditModal && editingMeeting && (
+
+      {showInstantModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
-           <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Edit Meeting</h3><button onClick={() => setShowEditModal(false)}><X className="w-5 h-5 text-slate-400"/></button></div>
-             <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
-                <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={editForm.title} onChange={e => setEditForm({...editForm, title: e.target.value})} required/></div>
-                <div className="grid grid-cols-2 gap-4"><div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={editForm.date} onChange={e => setEditForm({...editForm, date: e.target.value})} required/></div><div><label className="block text-sm text-slate-400 mb-1">Time</label><input type="time" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 px-4 text-white" value={editForm.time} onChange={e => setEditForm({...editForm, time: e.target.value})} required/></div></div>
-                <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg">Update</button></div>
-             </form>
-           </div>
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Start Instant Meeting</h3><button onClick={() => setShowInstantModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button></div>
+             <div className="p-6 space-y-4">
+                <p className="text-sm text-slate-400">The meeting will start immediately. You can invite participants now or share the link later.</p>
+                <div><label className="block text-sm text-slate-400 mb-2">Invite Participants (Optional)</label>{renderUserSelectionList()}</div>
+                <div className="flex justify-end pt-2"><button onClick={handleConfirmInstantMeeting} disabled={isCreatingMeeting} className="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-lg shadow-lg shadow-orange-500/20 transition-all disabled:opacity-50">{isCreatingMeeting ? 'Creating...' : 'Start Meeting'}</button></div>
+             </div>
+          </div>
         </div>
       )}
 
-      {/* --- MOBILE HEADER --- */}
-      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 border-b border-slate-800 z-40 flex items-center justify-between px-4">
-        <div className="flex items-center gap-2">
-           <img src={appSettings.iconUrl} alt="Logo" className="w-8 h-8 object-contain" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}} />
-           <span className="font-bold text-white text-lg tracking-tight">{appSettings.title}</span>
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-[fadeIn_0.2s_ease-out]">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+             <div className="p-4 border-b border-slate-800 flex justify-between items-center"><h3 className="text-white font-semibold">Edit Meeting</h3><button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button></div>
+             <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+                <div><label className="block text-sm text-slate-400 mb-1">Topic</label><input type="text" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editForm.title} onChange={(e) => setEditForm({...editForm, title: e.target.value})} required /></div>
+                <div className="grid grid-cols-2 gap-4">
+                   <div><label className="block text-sm text-slate-400 mb-1">Date</label><input type="date" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editForm.date} onChange={(e) => setEditForm({...editForm, date: e.target.value})} required /></div>
+                   <div><label className="block text-sm text-slate-400 mb-1">Time</label><input type="time" className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2.5 px-4 text-white focus:ring-2 focus:ring-blue-600 outline-none" value={editForm.time} onChange={(e) => setEditForm({...editForm, time: e.target.value})} required /></div>
+                </div>
+                <div className="flex justify-end gap-3 pt-2"><button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 text-slate-300 hover:bg-slate-800 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg">Save Changes</button></div>
+             </form>
+          </div>
         </div>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-300 hover:bg-slate-800 rounded-lg">
-          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-      </div>
-
-      {isMobileMenuOpen && <div className="fixed inset-0 bg-black/80 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}/>}
+      )}
 
       {/* --- SIDEBAR --- */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:w-64 md:flex ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-6 items-center gap-3 hidden md:flex">
-             <div className="w-10 h-10 flex items-center justify-center bg-slate-800 rounded-xl border border-slate-700 p-1.5">
-                <img src={appSettings.iconUrl} alt="Logo" className="w-full h-full object-contain" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}} />
-             </div>
-             <span className="text-lg font-bold text-white tracking-tight truncate">{appSettings.title}</span>
+      <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 border-r border-slate-800 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 flex items-center gap-3">
+           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/20">
+             <img src={appSettings.iconUrl} alt="Logo" className="w-6 h-6 object-contain filter brightness-0 invert" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"; e.currentTarget.className="w-6 h-6 invert"}} />
+           </div>
+           <span className="text-xl font-bold text-white tracking-tight truncate">{appSettings.title}</span>
         </div>
-        <div className="p-4 flex items-center justify-between md:hidden border-b border-slate-800"><span className="text-lg font-bold text-white">Menu</span><button onClick={() => setIsMobileMenuOpen(false)}><X className="w-6 h-6 text-slate-400"/></button></div>
-
-        <div className="px-4 py-2 mt-2 md:mt-0">
-          <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 flex items-center gap-3 mb-6">
-            <img src={user.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-600" />
-            <div className="overflow-hidden"><p className="text-sm font-medium text-white truncate">{user.name}</p><p className="text-xs text-blue-400 font-medium uppercase tracking-wider">{user.role}</p></div>
-          </div>
-        </div>
-
-        <nav className="flex-1 px-3 space-y-1">
-          <button onClick={() => navigate('meetings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'meetings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Calendar className="w-5 h-5" />Meetings</button>
-          {isAdmin && <button onClick={() => navigate('users')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Users className="w-5 h-5" />Manage Users</button>}
-          {isAdmin && <button onClick={() => navigate('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600/10 text-blue-400' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}`}><Settings className="w-5 h-5" />Settings</button>}
+        
+        <nav className="mt-6 px-4 space-y-2">
+           <button onClick={() => { navigate('meetings'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'meetings' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+             <Video className="w-5 h-5" /> Meetings
+           </button>
+           
+           {isAdmin && (
+             <>
+               <button onClick={() => { navigate('users'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'users' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                 <Users className="w-5 h-5" /> User Management
+               </button>
+               <button onClick={() => { navigate('settings'); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+                 <Settings className="w-5 h-5" /> Settings
+               </button>
+             </>
+           )}
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
-          <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-400/10 transition-colors"><LogOut className="w-5 h-5" />Sign Out</button>
-        </div>
-      </aside>
-
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 overflow-auto bg-slate-950 p-4 pt-20 md:p-8 md:pt-8 custom-scrollbar">
-        {isLoading && (
-          <div className="w-full h-full flex items-center justify-center">
-             <div className="flex flex-col items-center gap-2">
-                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                <p className="text-slate-500 text-sm">Syncing...</p>
-             </div>
-          </div>
-        )}
-
-        {!isLoading && activeTab === 'meetings' && (
-          <div className="max-w-5xl mx-auto">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-              <div><h1 className="text-2xl font-bold text-white mb-1">Dashboard</h1><p className="text-slate-400 text-sm md:text-base">Manage your upcoming video conferences</p></div>
-              {!isClient && (
-                <button onClick={() => { setShowScheduleModal(true); setSelectedParticipants(new Set()); }} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto"><Plus className="w-5 h-5" />Schedule Meeting</button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
-              {!isClient && (
-                 <div className="bg-gradient-to-br from-orange-500 to-red-600 p-6 rounded-2xl text-white shadow-xl shadow-orange-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={handleInstantMeetingClick}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Video className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">New Meeting</h3><p className="text-white/70 text-sm">Start an instant meeting</p></div>
-              )}
-              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-blue-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={() => setShowJoinModal(true)}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Plus className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">Join Meeting</h3><p className="text-white/70 text-sm">Join via ID or link</p></div>
-              {!isClient && (
-                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-2xl text-white shadow-xl shadow-emerald-500/10 cursor-pointer transform hover:scale-[1.02] transition-transform" onClick={() => { setShowScheduleModal(true); setSelectedParticipants(new Set()); }}><div className="p-3 bg-white/20 rounded-xl w-fit mb-4"><Calendar className="w-6 h-6" /></div><h3 className="text-lg font-bold mb-1">Schedule</h3><p className="text-white/70 text-sm">Plan for later</p></div>
-              )}
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-4 md:p-6 border-b border-slate-800 flex items-center justify-between"><h2 className="text-lg font-semibold text-white">Upcoming Meetings</h2><span className="px-3 py-1 bg-slate-800 text-slate-400 text-xs rounded-full font-medium">{meetings.length} Total</span></div>
-              <div className="divide-y divide-slate-800">
-                {meetings.map((meeting) => {
-                  const status = getMeetingStatus(meeting);
-                  const isHost = meeting.host === user.name;
-                  const canManage = isAdmin || isHost;
-                  return (
-                    <div key={meeting.id} className="p-4 md:p-6 hover:bg-slate-800/50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 group">
-                      <div className="flex items-center gap-4">
-                        <div className="flex flex-col items-center justify-center w-12 h-12 md:w-14 md:h-14 bg-slate-800 rounded-xl border border-slate-700 overflow-hidden relative shrink-0">
-                           <div className={`absolute top-0 w-full h-1.5 ${status === 'waiting' ? 'bg-orange-500' : 'bg-red-500'}`}></div>
-                           <span className="text-[10px] md:text-xs text-slate-400 font-bold uppercase mt-1">{formatDateDisplay(meeting.date).split(' ')[0]}</span>
-                           <span className="text-base md:text-lg font-bold text-white leading-none">{getDateDay(meeting.date)}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                             <h3 className="text-base font-semibold text-white mb-1 group-hover:text-blue-400 transition-colors truncate">{meeting.title}</h3>
-                             {status === 'waiting' && <span className="text-[10px] bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full border border-orange-500/20 font-medium flex items-center gap-1 shrink-0"><Hourglass className="w-3 h-3" /> Waiting</span>}
-                          </div>
-                          <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-4 text-xs md:text-sm text-slate-400">
-                            <span className="flex items-center gap-1.5"><Clock className="w-3 h-3 md:w-4 md:h-4" /> {meeting.time}</span>
-                            <span className="flex items-center gap-1.5 truncate"><Users className="w-3 h-3 md:w-4 md:h-4" /> Host: {meeting.host}</span>
-                          </div>
-                          <div className="text-xs text-slate-600 font-mono mt-1">ID: {meeting.id}</div>
-                        </div>
-                      </div>
-                      
-                      {/* Responsive Action Buttons - Stack on mobile, Row on Desktop */}
-                      <div className="flex flex-row md:items-center gap-2 md:gap-3 self-stretch md:self-auto w-full md:w-auto mt-2 md:mt-0">
-                        <button onClick={() => onJoinMeeting(meeting.id)} className={`flex-1 md:flex-none px-4 py-2 text-sm font-medium rounded-lg transition-colors border text-center ${status === 'waiting' ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-800 hover:bg-blue-600 text-white border-slate-700 hover:border-blue-500'}`}>Join</button>
-                        <div className="flex gap-2">
-                           <button onClick={(e) => handleCopyId(meeting.id, e)} className="p-2 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-colors border border-slate-800 hover:border-slate-600 flex-1 md:flex-none justify-center flex" title="Copy ID"><Copy className="w-5 h-5" /></button>
-                           <button onClick={(e) => handleShareMeeting(meeting, e)} className={`p-2 rounded-lg transition-colors border ${sharedId === meeting.id ? 'bg-indigo-600 text-white border-indigo-500' : 'text-slate-500 hover:text-white hover:bg-slate-700 border-slate-800 hover:border-slate-600'} flex-1 md:flex-none justify-center flex`} title="Share Meeting"><Share2 className="w-5 h-5" /></button>
-                           {canManage && (
-                             <><button onClick={(e) => handleEditClick(meeting, e)} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 border border-slate-800 rounded-lg transition-colors flex-1 md:flex-none justify-center flex"><Pencil className="w-5 h-5" /></button><button onClick={(e) => handleDeleteClick(meeting, e)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 border border-slate-800 rounded-lg transition-colors flex-1 md:flex-none justify-center flex"><Trash2 className="w-5 h-5" /></button></>
-                           )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {meetings.length === 0 && <div className="p-12 text-center text-slate-500"><LayoutGrid className="w-12 h-12 mx-auto mb-4 opacity-20" /><p>No upcoming meetings found</p></div>}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-800 bg-slate-900/50">
+           <div className="flex items-center gap-3 mb-4 px-2">
+              <img src={user.avatar} alt="Profile" className="w-10 h-10 rounded-full bg-slate-700 border border-slate-600" />
+              <div className="overflow-hidden">
+                 <p className="text-sm font-medium text-white truncate">{user.name}</p>
+                 <p className="text-xs text-slate-500 truncate">{user.role}</p>
               </div>
+           </div>
+           <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-red-500/10 hover:text-red-400 text-slate-400 rounded-lg transition-colors text-sm font-medium group">
+              <LogOut className="w-4 h-4 group-hover:text-red-400 transition-colors" /> Sign Out
+           </button>
+        </div>
+      </div>
+      
+      {/* --- MAIN CONTENT --- */}
+      <div className="flex-1 md:ml-64 flex flex-col h-full overflow-hidden bg-slate-950">
+         {/* HEADER MOBILE */}
+         <div className="md:hidden flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800 z-30">
+            <div className="flex items-center gap-3">
+               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center"><Video className="w-4 h-4 text-white" /></div>
+               <span className="font-bold text-white">{appSettings.title}</span>
             </div>
-          </div>
-        )}
+            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 text-slate-400 hover:text-white"><Menu className="w-6 h-6" /></button>
+         </div>
 
-        {!isLoading && activeTab === 'users' && isAdmin && (
-          <div className="max-w-4xl mx-auto">
-             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6"><div><h1 className="text-2xl font-bold text-white mb-1">User Management</h1><p className="text-slate-400 text-sm md:text-base">Manage team members and roles</p></div><button onClick={() => setShowAddUserModal(true)} className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 w-full md:w-auto"><UserPlus className="w-5 h-5" />Add User</button></div>
-             
-             {/* User Category Tabs */}
-             <div className="flex gap-2 mb-6 border-b border-slate-800">
-                <button 
-                  onClick={() => setUserManageTab('internal')}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${userManageTab === 'internal' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
-                >
-                    <Users className="w-4 h-4" /> Team Members
-                </button>
-                <button 
-                  onClick={() => setUserManageTab('client')}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${userManageTab === 'client' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
-                >
-                    <Briefcase className="w-4 h-4" /> Clients
-                </button>
-             </div>
-
-             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-               <div className="overflow-x-auto">
-                 <div className="min-w-[600px]">
-                   <div className="grid grid-cols-4 p-4 border-b border-slate-800 bg-slate-800/50 text-xs font-semibold text-slate-400 uppercase tracking-wider"><div className="col-span-2">User</div><div>Role</div><div className="text-right">Actions</div></div>
-                   {filteredUsers.length === 0 && (
-                       <div className="p-8 text-center text-slate-500">
-                           <p>No {userManageTab === 'client' ? 'clients' : 'team members'} found.</p>
-                       </div>
-                   )}
-                   {filteredUsers.map((u, i) => (
-                     <div key={u.id} className="grid grid-cols-4 p-4 border-b border-slate-800 items-center hover:bg-slate-800/30 transition-colors group">
-                       <div className="col-span-2 flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex items-center justify-center text-sm font-bold text-white overflow-hidden shrink-0">{u.avatar.includes('http') ? <img src={u.avatar} alt={u.name} className="w-full h-full object-cover" /> : u.name.charAt(0)}</div><div className="overflow-hidden"><p className="text-sm font-medium text-white truncate">{u.name}</p><p className="text-xs text-slate-500 truncate">{u.email}</p></div></div>
-                       <div><span className={`text-xs px-2 py-1 rounded-full font-medium ${u.role === 'ADMIN' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : (u.role === 'CLIENT' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-slate-700 text-slate-300')}`}>{u.role}</span></div>
-                       <div className="text-right flex items-center justify-end gap-2">
-                         {u.status === 'active' ? (
-                           <div className="flex items-center gap-1 mr-2"><span className="text-xs text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span></div>
-                         ) : (
-                           <div className="flex items-center gap-1 mr-2">
-                             <button onClick={() => handleSendInviteEmail(u)} disabled={sendingInviteId === u.id} className="p-1.5 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all disabled:opacity-50" title="Resend Invitation Email">
-                                {sendingInviteId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                             </button>
-                             {/* Copy Link Button Removed as requested */}
-                           </div>
-                         )}
-                         <div className="flex gap-1">
-                             {/* SIMPLIFIED RESET PASSWORD BUTTON (1 BUTTON ONLY WITH LOADING) */}
-                             {u.status === 'active' && (
-                                <button 
-                                    onClick={() => handleSendResetEmail(u)} 
-                                    disabled={sendingResetId === u.id}
-                                    className="p-1.5 text-slate-500 hover:text-orange-400 hover:bg-orange-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700 group disabled:opacity-50 disabled:cursor-not-allowed" 
-                                    title="Reset Password (Sends Email)"
-                                >
-                                    {sendingResetId === u.id ? (
-                                        <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-                                    ) : (
-                                        <RotateCcw className="w-4 h-4 group-hover:rotate-180 transition-transform" />
-                                    )}
-                                </button>
-                             )}
-                             <button onClick={() => handleEditUserClick(u)} className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Pencil className="w-4 h-4" /></button>
-                             {u.id !== user.id && <button onClick={() => handleDeleteUserClick(u)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors border border-transparent hover:border-slate-700"><Trash2 className="w-4 h-4" /></button>}
-                         </div>
-                       </div>
-                     </div>
-                   ))}
+         {/* LOADING OVERLAY */}
+         {isLoading && (
+            <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            </div>
+         )}
+         
+         {/* CONTENT AREA */}
+         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+            
+            {/* MEETINGS TAB */}
+            {activeTab === 'meetings' && (
+              <div className="max-w-5xl mx-auto space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                       <h1 className="text-3xl font-bold text-white mb-1">Meetings</h1>
+                       <p className="text-slate-400">Manage and join your video conferences.</p>
+                    </div>
+                    <div className="flex gap-3">
+                       <button onClick={() => setShowJoinModal(true)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl border border-slate-700 transition-colors flex items-center gap-2">
+                          <LinkIcon className="w-4 h-4" /> Join
+                       </button>
+                       {!isClient && (
+                         <>
+                           <button onClick={() => setShowScheduleModal(true)} className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-xl border border-slate-700 transition-colors flex items-center gap-2">
+                              <Calendar className="w-4 h-4" /> Schedule
+                           </button>
+                           <button onClick={handleInstantMeetingClick} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2">
+                              <Plus className="w-4 h-4" /> New Meeting
+                           </button>
+                         </>
+                       )}
+                    </div>
                  </div>
+
+                 {meetings.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 bg-slate-900/50 rounded-3xl border border-slate-800 border-dashed">
+                       <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-4"><Calendar className="w-10 h-10 text-slate-600" /></div>
+                       <h3 className="text-xl font-semibold text-white mb-2">No meetings found</h3>
+                       <p className="text-slate-400 max-w-xs text-center">Get started by scheduling a new meeting or starting an instant one.</p>
+                    </div>
+                 ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                       {meetings.map(meeting => {
+                          const status = getMeetingStatus(meeting);
+                          return (
+                             <div key={meeting.id} className="group bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-slate-700 hover:shadow-xl transition-all relative overflow-hidden flex flex-col">
+                                <div className="flex justify-between items-start mb-4">
+                                   <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                                      status === 'live' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 
+                                      status === 'waiting' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 
+                                      'bg-slate-800 text-slate-400 border border-slate-700'
+                                   }`}>
+                                      {status === 'live' && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
+                                      {status === 'live' ? 'Live Now' : status === 'waiting' ? 'Starting Soon' : 'Upcoming'}
+                                   </div>
+                                   {!isClient && (
+                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                       <button onClick={(e) => handleEditClick(meeting, e)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"><Pencil className="w-4 h-4" /></button>
+                                       <button onClick={(e) => handleDeleteClick(meeting, e)} className="p-2 hover:bg-red-500/10 rounded-lg text-slate-400 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                     </div>
+                                   )}
+                                </div>
+                                
+                                <h3 className="text-lg font-bold text-white mb-1 truncate">{meeting.title}</h3>
+                                <p className="text-slate-500 text-xs mb-6">ID: {meeting.id}</p>
+                                
+                                <div className="space-y-3 mb-6">
+                                   <div className="flex items-center gap-3 text-sm text-slate-300">
+                                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400"><Calendar className="w-4 h-4" /></div>
+                                      <div className="flex-1">
+                                         <p className="text-xs text-slate-500">Date</p>
+                                         <p className="font-medium">{formatDateDisplay(meeting.date)}</p>
+                                      </div>
+                                   </div>
+                                   <div className="flex items-center gap-3 text-sm text-slate-300">
+                                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400"><Clock className="w-4 h-4" /></div>
+                                      <div className="flex-1">
+                                         <p className="text-xs text-slate-500">Time</p>
+                                         <p className="font-medium">{meeting.time}</p>
+                                      </div>
+                                   </div>
+                                   <div className="flex items-center gap-3 text-sm text-slate-300">
+                                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400"><Users className="w-4 h-4" /></div>
+                                      <div className="flex-1">
+                                         <p className="text-xs text-slate-500">Host</p>
+                                         <p className="font-medium truncate">{meeting.host}</p>
+                                      </div>
+                                   </div>
+                                </div>
+
+                                <div className="mt-auto flex gap-2">
+                                   <button onClick={() => onJoinMeeting(meeting.id)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-colors shadow-lg shadow-blue-600/10">Join</button>
+                                   <button onClick={(e) => handleCopyId(meeting.id, e)} className={`p-2.5 rounded-xl border transition-all ${copied ? 'bg-green-600 border-green-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'}`}>{copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}</button>
+                                </div>
+                             </div>
+                          );
+                       })}
+                    </div>
+                 )}
+              </div>
+            )}
+            
+            {/* USERS TAB */}
+            {activeTab === 'users' && isAdmin && (
+               <div className="max-w-5xl mx-auto space-y-6 animate-[fadeIn_0.3s_ease-out]">
+                  <div className="flex flex-col md:flex-row justify-between gap-4">
+                     <div>
+                        <h1 className="text-3xl font-bold text-white mb-1">User Management</h1>
+                        <p className="text-slate-400">Manage internal staff and client access.</p>
+                     </div>
+                     <button onClick={() => setShowAddUserModal(true)} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2">
+                        <UserPlus className="w-4 h-4" /> Add User
+                     </button>
+                  </div>
+
+                  {/* SUB TABS */}
+                  <div className="flex border-b border-slate-800">
+                      <button onClick={() => setUserManageTab('internal')} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${userManageTab === 'internal' ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-300'}`}>
+                          Internal Users <span className="ml-2 px-2 py-0.5 bg-slate-800 rounded-full text-xs">{allUsers.filter(u => u.role !== UserRole.CLIENT).length}</span>
+                      </button>
+                      <button onClick={() => setUserManageTab('client')} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${userManageTab === 'client' ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-300'}`}>
+                          Clients <span className="ml-2 px-2 py-0.5 bg-slate-800 rounded-full text-xs">{allUsers.filter(u => u.role === UserRole.CLIENT).length}</span>
+                      </button>
+                  </div>
+
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm text-slate-400">
+                           <thead className="bg-slate-950 text-xs uppercase font-semibold text-slate-500">
+                              <tr>
+                                 <th className="px-6 py-4">User</th>
+                                 <th className="px-6 py-4">Role</th>
+                                 <th className="px-6 py-4">Status</th>
+                                 <th className="px-6 py-4 text-right">Actions</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-800">
+                              {filteredUsers.length === 0 ? (
+                                  <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-500">No users found.</td></tr>
+                              ) : (
+                                  filteredUsers.map(u => (
+                                     <tr key={u.id} className="hover:bg-slate-800/50 transition-colors">
+                                        <td className="px-6 py-4">
+                                           <div className="flex items-center gap-3">
+                                              <img src={u.avatar} alt={u.name} className="w-9 h-9 rounded-full bg-slate-800" />
+                                              <div>
+                                                 <div className="font-medium text-white">{u.name}</div>
+                                                 <div className="text-xs text-slate-500">{u.email}</div>
+                                              </div>
+                                           </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                              u.role === UserRole.ADMIN ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                                              u.role === UserRole.MEMBER ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                              'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                           }`}>{u.role}</span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {u.status === 'active' ? (
+                                                <span className="flex items-center gap-1.5 text-green-400 text-xs font-medium"><Check className="w-3 h-3" /> Active</span>
+                                            ) : (
+                                                <span className="flex items-center gap-1.5 text-orange-400 text-xs font-medium"><Hourglass className="w-3 h-3" /> Pending</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                           <div className="flex items-center justify-end gap-2">
+                                              <button onClick={() => handleSendResetEmail(u)} disabled={!!sendingResetId} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50" title="Send Password Reset">
+                                                 {sendingResetId === u.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                                              </button>
+                                              
+                                              {u.status === 'pending' && (
+                                                  <button onClick={() => handleSendInviteEmail(u)} disabled={!!sendingInviteId} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors disabled:opacity-50" title="Resend Invite">
+                                                     {sendingInviteId === u.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                                  </button>
+                                              )}
+                                              
+                                              <button onClick={() => handleEditUserClick(u)} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors" title="Edit">
+                                                 <Pencil className="w-4 h-4" />
+                                              </button>
+                                              <button onClick={() => handleDeleteUserClick(u)} className={`p-2 rounded-lg transition-colors ${u.id === user.id ? 'opacity-20 cursor-not-allowed' : 'hover:bg-red-500/10 text-slate-400 hover:text-red-400'}`} disabled={u.id === user.id} title="Delete">
+                                                 <Trash2 className="w-4 h-4" />
+                                              </button>
+                                           </div>
+                                        </td>
+                                     </tr>
+                                  ))
+                              )}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
                </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {!isLoading && activeTab === 'settings' && isAdmin && (
-            <div className="max-w-3xl mx-auto animate-[fadeIn_0.2s_ease-out]">
-                <div className="mb-8">
-                    <h1 className="text-2xl font-bold text-white mb-1">Application Settings</h1>
-                    <p className="text-slate-400 text-sm md:text-base">Customize the workspace branding</p>
-                </div>
+            {/* SETTINGS TAB */}
+            {activeTab === 'settings' && isAdmin && (
+                <div className="max-w-2xl mx-auto space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                    <div>
+                        <h1 className="text-3xl font-bold text-white mb-1">App Settings</h1>
+                        <p className="text-slate-400">Configure global application preferences.</p>
+                    </div>
 
-                <form onSubmit={handleSaveSettings} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                    <div className="p-6 md:p-8 space-y-8">
-                        {/* Title Section */}
-                        <div className="space-y-4">
-                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                                <Globe className="w-4 h-4" /> Application Title
-                            </label>
-                            <div className="relative">
-                                <input 
-                                    type="text" 
-                                    value={settingsForm.title}
-                                    onChange={(e) => setSettingsForm({...settingsForm, title: e.target.value})}
-                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all"
-                                    placeholder="ZoomClone AI"
-                                    required
-                                />
-                                <p className="mt-2 text-xs text-slate-500">This will appear in the browser tab and dashboard header.</p>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-slate-800" />
-
-                        {/* Icon Section */}
-                        <div className="space-y-4">
-                             <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                                <ImageIcon className="w-4 h-4" /> Icon (Favicon & Logo)
-                            </label>
-                            
-                            <div className="flex flex-col gap-4">
-                                {/* Hidden File Input */}
-                                <input 
-                                    type="file" 
-                                    ref={fileInputRef} 
-                                    onChange={handleImageUpload} 
-                                    accept="image/*" 
-                                    className="hidden" 
-                                />
-
-                                <div className="flex flex-col md:flex-row gap-6">
-                                    <div className="flex-1 space-y-3">
-                                        <div className="flex gap-2">
-                                            <div className="relative flex-1">
-                                                <input 
-                                                    type="url" 
-                                                    value={settingsForm.iconUrl}
-                                                    onChange={(e) => setSettingsForm({...settingsForm, iconUrl: e.target.value})}
-                                                    className="w-full bg-slate-950 border border-slate-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none transition-all pr-12"
-                                                    placeholder="https://example.com/logo.png"
-                                                />
-                                                <div className="absolute right-3 top-3.5 text-slate-500 pointer-events-none">
-                                                    <LinkIcon className="w-5 h-5" />
-                                                </div>
-                                            </div>
-                                            <button 
-                                                type="button" 
-                                                onClick={handleTriggerUpload}
-                                                className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 rounded-xl transition-colors flex items-center gap-2 font-medium"
-                                            >
-                                                <Upload className="w-5 h-5" />
-                                                <span className="hidden sm:inline">Upload</span>
-                                            </button>
-                                        </div>
-                                        <p className="text-xs text-slate-500">
-                                            Paste a URL or upload an image. Uploaded images are compressed and stored securely.
-                                        </p>
+                    <form onSubmit={handleSaveSettings} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+                        {/* App Icon Upload */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-4">Application Logo</label>
+                            <div className="flex items-center gap-6">
+                                <div className="w-24 h-24 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-center relative overflow-hidden group">
+                                    <img src={settingsForm.iconUrl} alt="App Icon" className="w-16 h-16 object-contain z-10" onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}} />
+                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20 cursor-pointer" onClick={handleTriggerUpload}>
+                                        <Upload className="w-6 h-6 text-white" />
                                     </div>
-
-                                    {/* Preview Box */}
-                                    <div className="shrink-0 flex flex-col items-center justify-center p-4 bg-slate-950 border border-slate-800 rounded-xl w-32 h-32 relative group">
-                                         {settingsForm.iconUrl ? (
-                                             <img 
-                                                src={settingsForm.iconUrl} 
-                                                alt="Preview" 
-                                                className="w-16 h-16 object-contain mb-2" 
-                                                onError={(e) => {e.currentTarget.src = "https://cdn-icons-png.flaticon.com/512/4406/4406234.png"}}
-                                             />
-                                         ) : (
-                                             <ImageIcon className="w-12 h-12 text-slate-700 mb-2" />
-                                         )}
-                                         <span className="text-[10px] text-slate-500">Preview</span>
-                                         
-                                         {/* Overlay for re-uploading via click */}
-                                         <div 
-                                            onClick={handleTriggerUpload}
-                                            className="absolute inset-0 bg-black/50 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer rounded-xl"
-                                         >
-                                             <RefreshCw className="w-6 h-6 text-white mb-1" />
-                                             <span className="text-[10px] text-white font-medium">Change</span>
-                                         </div>
-                                    </div>
+                                </div>
+                                <div>
+                                    <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        className="hidden" 
+                                        ref={fileInputRef}
+                                        onChange={handleImageUpload}
+                                    />
+                                    <button type="button" onClick={handleTriggerUpload} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg border border-slate-700 transition-colors">
+                                        Upload New Logo
+                                    </button>
+                                    <p className="text-xs text-slate-500 mt-2">Recommended: 512x512px PNG</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div className="bg-slate-950/50 p-6 border-t border-slate-800 flex items-center justify-end gap-4">
-                        {settingsSavedSuccess && <span className="text-sm text-green-500 font-medium flex items-center gap-1 animate-pulse"><Check className="w-4 h-4" /> Saved Successfully</span>}
-                        <button 
-                            type="submit" 
-                            disabled={isSavingSettings}
-                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-lg font-bold shadow-lg shadow-blue-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            Save Changes
+                        {/* App Title */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-1.5">Application Name</label>
+                            <div className="relative">
+                                <Globe className="absolute left-3 top-3 w-5 h-5 text-slate-500" />
+                                <input 
+                                    type="text" 
+                                    className="w-full bg-slate-950 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-600 outline-none transition-colors"
+                                    value={settingsForm.title}
+                                    onChange={(e) => setSettingsForm(prev => ({ ...prev, title: e.target.value }))}
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">This title will appear on the login screen and browser tab.</p>
+                        </div>
+
+                        {/* Submit Button */}
+                        <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                            <span className={`text-sm font-medium transition-opacity duration-500 ${settingsSavedSuccess ? 'opacity-100 text-green-500' : 'opacity-0'}`}>
+                                Settings saved successfully!
+                            </span>
+                            <button 
+                                type="submit" 
+                                disabled={isSavingSettings}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isSavingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                Save Changes
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                        <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Briefcase className="w-5 h-5 text-slate-400" /> Google Drive Integration</h3>
+                        <p className="text-slate-400 text-sm mb-4">Connect Google Drive to save meeting recordings automatically. (Coming Soon)</p>
+                        <button disabled className="px-4 py-2 bg-slate-800 text-slate-500 font-medium rounded-lg border border-slate-700 cursor-not-allowed">
+                            Connect Account
                         </button>
                     </div>
-                </form>
-            </div>
-        )}
-      </main>
+                </div>
+            )}
+
+         </div>
+      </div>
     </div>
   );
 };

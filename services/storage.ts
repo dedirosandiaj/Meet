@@ -53,13 +53,14 @@ export const storageService = {
 
   updateAppSettings: async (settings: AppSettings): Promise<AppSettings> => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    await supabase.from('app_settings').upsert({
+    const { error } = await supabase.from('app_settings').upsert({
         id: 1,
         title: settings.title,
         icon_url: settings.iconUrl,
         google_drive_client_id: settings.googleDriveClientId,
         google_drive_api_key: settings.googleDriveApiKey
     });
+    if (error) console.error("Error updating settings:", error);
     return settings;
   },
 
@@ -78,7 +79,9 @@ export const storageService = {
   },
 
   createMeeting: async (meeting: Meeting, invitedUserIds: string[] = []): Promise<Meeting[]> => {
-    await supabase.from('meetings').insert({
+    // CRITICAL FIX: Throw error if insert fails.
+    // This prevents the UI from proceeding to "Join" a meeting that doesn't exist in DB.
+    const { error } = await supabase.from('meetings').insert({
         id: meeting.id,
         title: meeting.title,
         date: meeting.date,
@@ -87,6 +90,12 @@ export const storageService = {
         participantsCount: meeting.participantsCount,
         status: meeting.status
     });
+
+    if (error) {
+        console.error("Create meeting failed:", error);
+        throw error;
+    }
+
     if (invitedUserIds.length > 0) {
         const invites = invitedUserIds.map(uid => ({ meeting_id: meeting.id, user_id: uid }));
         await supabase.from('meeting_invites').insert(invites);
@@ -95,17 +104,21 @@ export const storageService = {
   },
 
   updateMeeting: async (updatedMeeting: Meeting): Promise<Meeting[]> => {
-    await supabase.from('meetings').update({
+    const { error } = await supabase.from('meetings').update({
         title: updatedMeeting.title,
         date: updatedMeeting.date,
         time: updatedMeeting.time
     }).eq('id', updatedMeeting.id);
+    
+    if (error) throw error;
+    
     return storageService.getMeetings();
   },
 
   deleteMeeting: async (id: string): Promise<Meeting[]> => {
     await supabase.from('meeting_invites').delete().eq('meeting_id', id);
-    await supabase.from('meetings').delete().eq('id', id);
+    const { error } = await supabase.from('meetings').delete().eq('id', id);
+    if (error) throw error;
     return storageService.getMeetings();
   },
 
@@ -115,14 +128,12 @@ export const storageService = {
       const { data: meeting } = await supabase.from('meetings').select('host').eq('id', meetingId).maybeSingle();
       
       const isHost = meeting && meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
-      // LOGIC BARU: Admin dan Member otomatis admitted. Hanya Client yang waiting.
       const userRole = (user.role || '').toUpperCase();
       const isPrivileged = userRole === 'ADMIN' || userRole === 'MEMBER';
       
       const initialStatus = (isHost || isPrivileged) ? 'admitted' : 'waiting';
 
-      // PERBAIKAN: Gunakan metode Select manual lalu Insert/Update.
-      // Upsert native (onConflict) menyebabkan error 400 jika DB tidak memiliki unique constraint yang sesuai.
+      // Manual Check-then-Insert logic to avoid UPSERT constraint issues
       const { data: existing } = await supabase
         .from('participants')
         .select('id')
@@ -131,16 +142,15 @@ export const storageService = {
         .maybeSingle();
 
       if (existing) {
-        // Jika sudah ada, update status dan info terbaru
-        await supabase.from('participants').update({
+        const { error: updateError } = await supabase.from('participants').update({
           name: user.name,
           avatar: user.avatar,
           role: user.role,
           status: initialStatus
         }).eq('id', existing.id);
+        if (updateError) throw updateError;
       } else {
-        // Jika belum ada, insert baru
-        await supabase.from('participants').insert({
+        const { error: insertError } = await supabase.from('participants').insert({
           meeting_id: meetingId,
           user_id: user.id,
           name: user.name,
@@ -148,12 +158,15 @@ export const storageService = {
           role: user.role,
           status: initialStatus
         });
+        if (insertError) {
+             console.error("Participant Insert Error (Possible FK Violation if meeting doesn't exist):", insertError);
+             throw insertError;
+        }
       }
 
       return initialStatus;
     } catch (err) {
       console.error("Join Room Error:", err);
-      // Fallback return waiting agar aplikasi tidak crash
       return 'waiting';
     }
   },
@@ -196,21 +209,8 @@ export const storageService = {
       .on('broadcast', { event: 'refresh-list' }, refreshList)
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Track presence
-          await channel.track({
-            user_id: user.id,
-            name: user.name,
-          });
-          
-          // CRITICAL: Immediately tell everyone to refresh their list.
-          // This ensures the Host sees the new participant who just entered the DB.
-          await channel.send({ 
-            type: 'broadcast', 
-            event: 'refresh-list', 
-            payload: {} 
-          });
-
-          // Perform initial fetch for self
+          await channel.track({ user_id: user.id, name: user.name });
+          await channel.send({ type: 'broadcast', event: 'refresh-list', payload: {} });
           refreshList();
         }
       });

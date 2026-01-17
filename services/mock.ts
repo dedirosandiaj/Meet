@@ -1,3 +1,4 @@
+
 import { User, UserRole, Meeting, ChatMessage } from '../types';
 
 // Mock Users
@@ -43,7 +44,7 @@ export const USERS: User[] = [
 // Mock Meetings
 export const INITIAL_MEETINGS: Meeting[] = [
   {
-    id: 'm-1',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     title: 'Weekly Standup',
     date: 'Today',
     time: '10:00 AM',
@@ -52,7 +53,7 @@ export const INITIAL_MEETINGS: Meeting[] = [
     status: 'live'
   },
   {
-    id: 'm-2',
+    id: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
     title: 'Product Design Review',
     date: 'Tomorrow',
     time: '2:00 PM',
@@ -61,7 +62,7 @@ export const INITIAL_MEETINGS: Meeting[] = [
     status: 'upcoming'
   },
   {
-    id: 'm-3',
+    id: 'c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33',
     title: 'Q4 Marketing Strategy',
     date: 'Nov 12',
     time: '11:00 AM',

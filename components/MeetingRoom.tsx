@@ -314,7 +314,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   if (isWaiting && meeting && targetDate) return <CountdownView targetDate={targetDate} meeting={meeting} onBack={onEndCall} onComplete={() => { setIsWaiting(false); startWebcam(); }} />;
   if (!isAdmitted && meeting) return <WaitingRoomView meeting={meeting} onLeave={onEndCall} />;
 
-  const isHost = meeting?.host.trim().toLowerCase() === user.name.trim().toLowerCase() || user.role === UserRole.ADMIN;
+  const isHost = meeting?.host.trim().toLowerCase() === user.name.trim().toLowerCase();
+  const canManage = isHost || user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
 
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
@@ -337,10 +338,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getAudioTracks().forEach(t=>t.enabled=!t.enabled); setIsMuted(!isMuted); } }} className={`p-3.5 rounded-xl transition-colors ${isMuted ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Mic className="w-5 h-5 text-white" /></button>
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getVideoTracks().forEach(t=>t.enabled=!t.enabled); setIsVideoOff(!isVideoOff); } }} className={`p-3.5 rounded-xl transition-colors ${isVideoOff ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Video className="w-5 h-5 text-white" /></button>
             <div className="w-px h-8 bg-slate-700 mx-1"></div>
-            <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3.5 rounded-xl relative transition-colors ${showSidebar === 'participants' ? 'bg-blue-600' : 'bg-slate-800'}`}><Users className="w-5 h-5 text-white" />{(isHost && waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{waitingParticipants.length}</span>}</button>
+            <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3.5 rounded-xl relative transition-colors ${showSidebar === 'participants' ? 'bg-blue-600' : 'bg-slate-800'}`}><Users className="w-5 h-5 text-white" />{(canManage && waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-red-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{waitingParticipants.length}</span>}</button>
             <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3.5 rounded-xl transition-colors ${showSidebar === 'chat' ? 'bg-blue-600' : 'bg-slate-800'}`}><MessageSquare className="w-5 h-5 text-white" /></button>
             <div className="w-px h-8 bg-slate-700 mx-1"></div>
-            <button onClick={onEndCall} className="px-6 py-3.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95"><PhoneOff className="w-5 h-5" /><span>{isHost?'End':'Leave'}</span></button>
+            <button onClick={onEndCall} className="px-6 py-3.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-red-500/20 transition-all active:scale-95"><PhoneOff className="w-5 h-5" /><span>{canManage?'End':'Leave'}</span></button>
         </div>
       </div>
 
@@ -368,7 +369,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            
            {showSidebar === 'participants' && (
               <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                 {isHost && waitingParticipants.length > 0 && (
+                 {canManage && waitingParticipants.length > 0 && (
                      <div className="mb-4 bg-blue-900/20 rounded-xl border border-blue-500/30 overflow-hidden">
                          <div className="px-3 py-2 bg-blue-500/20 text-[10px] font-bold text-blue-400 uppercase tracking-widest flex justify-between items-center"><span>Waiting Room ({waitingParticipants.length})</span><Loader2 className={`w-3 h-3 animate-spin ${syncing ? 'opacity-100' : 'opacity-0'}`} /></div>
                          {waitingParticipants.map(p => (
@@ -382,12 +383,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                  <div className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">In Meeting</div>
                  <div className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-blue-600/20">{user.name.charAt(0)}</div>
-                    <div className="flex-1"><p className="text-sm font-medium text-white truncate">{user.name} (You)</p><p className="text-[10px] text-blue-400 font-bold uppercase">Host</p></div>
+                    <div className="flex-1"><p className="text-sm font-medium text-white truncate">{user.name} (You)</p><p className="text-[10px] text-blue-400 font-bold uppercase">{isHost ? 'Host' : user.role}</p></div>
                  </div>
                  {activeParticipants.map(p => (
                     <div key={p.user_id} className="p-3 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-3">
                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-white shadow-sm">{p.name.charAt(0)}</div>
-                       <div className="flex-1"><p className="text-sm font-medium text-white truncate">{p.name}</p><p className="text-[10px] text-slate-500 uppercase font-bold">Participant</p></div>
+                       <div className="flex-1"><p className="text-sm font-medium text-white truncate">{p.name}</p><p className="text-[10px] text-slate-500 uppercase font-bold">{p.role === UserRole.CLIENT ? 'Participant' : p.role}</p></div>
                     </div>
                  ))}
               </div>

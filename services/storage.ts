@@ -170,13 +170,13 @@ export const storageService = {
       .on('broadcast', { event: 'refresh-list' }, refreshList) // For explicit actions like 'admit'
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Announce presence. This will trigger a 'presence:sync' for all clients,
-          // including this one, which will then call refreshList. This avoids a
-          // race condition with the initial joinMeetingRoom() call.
+          // Announce presence
           await channel.track({
             user_id: user.id,
             name: user.name,
           });
+          // Perform initial fetch
+          refreshList();
         }
       });
 

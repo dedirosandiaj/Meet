@@ -569,7 +569,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         status: 'live'
       };
       
-      const participantIds = Array.from(selectedParticipants);
+      // Fix: Cast to string[] to resolve 'unknown[]' type inference error
+      const participantIds = Array.from(selectedParticipants) as string[];
       
       // 1. Create in DB
       const updated = await storageService.createMeeting(newMeeting, participantIds);
@@ -613,7 +614,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, onJoinMeeting, ap
         status: 'upcoming'
       };
       
-      const participantIds = Array.from(selectedParticipants);
+      // Fix: Cast to string[] to resolve 'unknown[]' type inference error
+      const participantIds = Array.from(selectedParticipants) as string[];
       
       // 1. Create in DB
       const updated = await storageService.createMeeting(newMeeting, participantIds);

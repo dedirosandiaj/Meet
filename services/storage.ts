@@ -102,7 +102,6 @@ export const storageService = {
 
     try {
         if (currentUser.role === UserRole.ADMIN) {
-            // Admin sees all
             const { data } = await supabase
                 .from('meetings')
                 .select('*')
@@ -110,14 +109,11 @@ export const storageService = {
                 .order('time', { ascending: true });
             return (data || []) as Meeting[];
         } else {
-            // Member sees: 
-            // 1. Meetings they Host
             const { data: hostedMeetings } = await supabase
                 .from('meetings')
                 .select('*')
                 .eq('host', currentUser.name);
 
-            // 2. Meetings they are invited to
             const { data: invites } = await supabase
                 .from('meeting_invites')
                 .select('meeting_id')
@@ -133,12 +129,10 @@ export const storageService = {
                 invitedMeetings = (invitedData || []) as Meeting[];
             }
 
-            // Merge and deduplicate
             const hosted = (hostedMeetings || []) as Meeting[];
             const combined = [...hosted, ...invitedMeetings];
             const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
             
-            // Sort
             return unique.sort((a, b) => {
                 const dateA = a.date === 'Today' ? new Date().toISOString() : a.date;
                 const dateB = b.date === 'Today' ? new Date().toISOString() : b.date;
@@ -152,18 +146,16 @@ export const storageService = {
   },
 
   createMeeting: async (meeting: Meeting, invitedUserIds: string[] = []): Promise<Meeting[]> => {
-    // 1. Create Meeting
     await supabase.from('meetings').insert({
         id: meeting.id,
         title: meeting.title,
         date: meeting.date,
         time: meeting.time,
         host: meeting.host,
-        "participantsCount": meeting.participantsCount, // Quoted to match case-sensitive column
+        participantsCount: meeting.participantsCount,
         status: meeting.status
     });
     
-    // 2. Create Invites
     if (invitedUserIds.length > 0) {
         const invites = invitedUserIds.map(uid => ({
             meeting_id: meeting.id,
@@ -186,8 +178,6 @@ export const storageService = {
   },
 
   deleteMeeting: async (id: string): Promise<Meeting[]> => {
-    // Cascade delete is handled by Database Foreign Keys usually, 
-    // but explicit delete is safer if FK isn't set up perfectly.
     await supabase.from('meeting_invites').delete().eq('meeting_id', id);
     await supabase.from('meetings').delete().eq('id', id);
     return storageService.getMeetings();
@@ -196,47 +186,51 @@ export const storageService = {
   // --- REALTIME PARTICIPANTS & SIGNALING ---
 
   joinMeetingRoom: async (meetingId: string, user: User) => {
-    // 1. Check if entry already exists
-    const { data: existing } = await supabase
-        .from('participants')
-        .select('*')
-        .eq('meeting_id', meetingId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+    console.log(`[Database] Attempting to join meeting ${meetingId} as user ${user.id}`);
+    try {
+      // 1. Check if entry already exists
+      const { data: existing, error: checkError } = await supabase
+          .from('participants')
+          .select('*')
+          .eq('meeting_id', meetingId)
+          .eq('user_id', user.id)
+          .maybeSingle();
 
-    // 2. Fetch Meeting Info to verify Host
-    // This ensures that if the User is the Host, they are NEVER put in waiting room,
-    // regardless of their Role (e.g. creating Instant Meeting)
-    const { data: meeting } = await supabase
-        .from('meetings')
-        .select('host')
-        .eq('id', meetingId)
-        .maybeSingle();
+      if (checkError) throw checkError;
 
-    const isHost = meeting && meeting.host === user.name;
-    const isStaff = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
+      // 2. Fetch Meeting Info to verify Host
+      const { data: meeting, error: meetError } = await supabase
+          .from('meetings')
+          .select('host')
+          .eq('id', meetingId)
+          .maybeSingle();
 
-    // Logic: If Host OR Staff -> Admitted. If Client -> Waiting (unless Host).
-    const initialStatus = (isHost || isStaff) ? 'admitted' : 'waiting';
+      if (meetError) throw meetError;
 
-    if (!existing) {
-        await supabase.from('participants').insert({
-            meeting_id: meetingId,
-            user_id: user.id,
-            name: user.name,
-            avatar: user.avatar,
-            role: user.role,
-            status: initialStatus
-        });
-    } else {
-        // Fix for legacy data or re-joins:
-        // Update status if it's missing OR if we need to enforce logic on re-entry
-        if (!existing.status) {
-             await supabase.from('participants').update({ status: initialStatus }).eq('id', existing.id);
-        } else if (existing.status === 'waiting' && (isHost || isStaff)) {
-             // Auto-fix: If a Staff member was accidentally stuck in waiting, admit them on re-join
-             await supabase.from('participants').update({ status: 'admitted' }).eq('id', existing.id);
-        }
+      const isHost = meeting && meeting.host === user.name;
+      const isStaff = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
+      const initialStatus = (isHost || isStaff) ? 'admitted' : 'waiting';
+
+      if (!existing) {
+          const { error: insertError } = await supabase.from('participants').insert({
+              meeting_id: meetingId,
+              user_id: user.id,
+              name: user.name,
+              avatar: user.avatar,
+              role: user.role,
+              status: initialStatus
+          });
+          if (insertError) throw insertError;
+          console.log(`[Database] Successfully joined lobby as ${initialStatus}`);
+      } else {
+          // Sync status if needed
+          if (!existing.status || (existing.status === 'waiting' && (isHost || isStaff))) {
+               await supabase.from('participants').update({ status: 'admitted' }).eq('id', existing.id);
+               console.log(`[Database] Upgraded legacy record to admitted`);
+          }
+      }
+    } catch (err) {
+      console.error("[Database] Failed to joinMeetingRoom:", err);
     }
   },
 
@@ -263,37 +257,28 @@ export const storageService = {
     onSignal: (payload: any) => void
   ): RealtimeChannel => {
     
-    // Initial fetch
     storageService.getParticipants(meetingId).then(onParticipantsUpdate);
 
-    // Subscribe to DB changes for participants list
     const channel = supabase.channel(`meeting-${meetingId}`, {
         config: {
             presence: { key: meetingId },
-            broadcast: { self: true } // Receive own signals? Usually no, but for multi-tab debugging yes.
+            broadcast: { self: true }
         }
     });
 
     channel
-        // Listen for DB changes on participants table (INSERT, UPDATE, DELETE)
         .on(
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, 
             async (payload) => {
-                // Fetch fresh list on any change
                 const updated = await storageService.getParticipants(meetingId);
                 onParticipantsUpdate(updated);
             }
         )
-        // Listen for WebRTC Signals via Broadcast
         .on('broadcast', { event: 'signal' }, (payload) => {
              onSignal(payload.payload);
         })
-        .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                 console.log("Connected to Realtime Channel");
-            }
-        });
+        .subscribe();
 
     return channel;
   },
@@ -307,8 +292,6 @@ export const storageService = {
         });
     }
   },
-
-  // --- USERS OPERATIONS ---
 
   getUsers: async (): Promise<User[]> => {
     const { data } = await supabase.from('users').select('*').order('name');

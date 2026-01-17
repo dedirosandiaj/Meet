@@ -67,8 +67,7 @@ const parseMeetingDateTime = (dateStr: string, timeStr: string): Date => {
     }
   }
 
-  // Handle Time (e.g., "14:30" or "2:30 PM" - assuming 24h format from input for simplicity based on previous code)
-  // Dashboard input was type="time" which returns "HH:MM" (24h)
+  // Handle Time
   const [hours, minutes] = timeStr.split(':').map(Number);
   
   if (!isNaN(hours) && !isNaN(minutes)) {
@@ -114,7 +113,6 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
 
   return (
     <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-        {/* Background Elements */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[100px]"></div>
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/10 rounded-full blur-[100px]"></div>
@@ -138,7 +136,6 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
                 </div>
             </div>
 
-            {/* Timer Grid */}
             <div className="grid grid-cols-4 gap-2 md:gap-4 mb-12">
                 {[
                     { label: 'Days', value: timeLeft.days },
@@ -180,15 +177,11 @@ const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () =
 
     const handleManualCheck = () => {
         setIsChecking(true);
-        // Trigger a force re-fetch via storage service logic (usually triggered by realtime)
-        // In this UI context, we can just wait for the parent to re-render from props change
-        // but visually showing we are checking helps UX.
         setTimeout(() => setIsChecking(false), 1000);
     };
 
     return (
         <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-             {/* Background Elements */}
              <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
                  <div className="absolute top-[-20%] right-[-20%] w-[50%] h-[50%] bg-orange-600/5 rounded-full blur-[100px]"></div>
                  <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-blue-600/5 rounded-full blur-[100px]"></div>
@@ -311,7 +304,15 @@ const AudioIndicator = ({ level }: { level: number }) => {
 };
 
 // --- HELPER COMPONENT: ZOOMABLE VIEW ---
-const ZoomableView = ({ children, onTogglePin, isPinned, onToggleFit, isFit }: { children: React.ReactNode, onTogglePin: () => void, isPinned: boolean, onToggleFit: () => void, isFit: boolean }) => {
+interface ZoomableViewProps {
+  children: React.ReactNode;
+  onTogglePin: () => void;
+  isPinned: boolean;
+  onToggleFit: () => void;
+  isFit: boolean;
+}
+
+const ZoomableView: React.FC<ZoomableViewProps> = ({ children, onTogglePin, isPinned, onToggleFit, isFit }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -320,7 +321,7 @@ const ZoomableView = ({ children, onTogglePin, isPinned, onToggleFit, isFit }: {
 
   const handleZoom = (delta: number) => {
     setScale(prev => {
-      const newScale = Math.min(Math.max(1, prev + delta), 6); // Max 6x zoom
+      const newScale = Math.min(Math.max(1, prev + delta), 6); 
       if (newScale === 1) setPosition({ x: 0, y: 0 });
       return newScale;
     });
@@ -378,7 +379,6 @@ const ZoomableView = ({ children, onTogglePin, isPinned, onToggleFit, isFit }: {
         {children}
       </div>
 
-      {/* Advanced Controls Overlay */}
       <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 pointer-events-none">
         <div className="pointer-events-auto flex flex-col gap-2">
             <button onClick={(e) => { e.stopPropagation(); onTogglePin(); }} className={`p-2 backdrop-blur text-white rounded-lg shadow-lg border border-slate-700 transition-colors ${isPinned ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-800/80 hover:bg-slate-700'}`} title={isPinned ? "Unpin (Minimize)" : "Pin (Maximize)"}>
@@ -409,7 +409,7 @@ const ZoomableView = ({ children, onTogglePin, isPinned, onToggleFit, isFit }: {
 const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, isScreenSharing, user, onPin, isPinned }: { stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean, isScreenSharing: boolean, user: User, onPin: () => void, isPinned: boolean }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioLevel = useAudioLevel(isMuted ? null : stream);
-  const [isFit, setIsFit] = useState(isScreenSharing); // Default fit for screen share
+  const [isFit, setIsFit] = useState(isScreenSharing); 
 
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -500,52 +500,33 @@ const RemoteVideoPlayer = ({ stream, participant, isScreenSharing, onPin, isPinn
 };
 
 const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall }) => {
-  // Meeting Data
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [isWaiting, setIsWaiting] = useState(true);
   const [targetDate, setTargetDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLeaving, setIsLeaving] = useState(false);
-  
-  // NEW STATE: Client Admittance Status
-  const [isAdmitted, setIsAdmitted] = useState<boolean>(true); // Default true for hosts, checked for clients
-
-  // NEW STATE: Meeting Ended by Host
+  const [isAdmitted, setIsAdmitted] = useState<boolean>(true); 
   const [hostEndedMeeting, setHostEndedMeeting] = useState(false);
-
-  // Layout State (Pinning)
   const [pinnedUserId, setPinnedUserId] = useState<string | null>(null);
-
-  // Streams & WebRTC
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
-  
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
-  const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]); // New state for waiting room
-
+  const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]); 
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [remoteScreenShares, setRemoteScreenShares] = useState<Set<string>>(new Set());
-  
   const channelRef = useRef<RealtimeChannel | null>(null);
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  
   const isCleaningUp = useRef(false);
-
-  // States
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
-  
-  // UI States
   const [showSidebar, setShowSidebar] = useState<'chat' | 'participants' | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
 
-  // --- INITIALIZATION ---
-  
-  // 1. LOAD MEETING DATA
+  // 1. INITIAL LOAD & LOBBY JOIN
   useEffect(() => {
     const initMeeting = async () => {
       const meetings = await storageService.getMeetings();
@@ -554,13 +535,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (found) {
         setMeeting(found);
         
+        // --- JOIN LOBBY IMMEDIATELY ---
+        // We do this before webcam starts so user shows up in database
+        await storageService.joinMeetingRoom(meetingId, user);
+
         let shouldWait = false;
         let tDate: Date | null = null;
 
         if (found.status !== 'live') {
             tDate = parseMeetingDateTime(found.date, found.time);
             const now = new Date();
-            // If the calculated time is in the future, wait
             if (tDate > now) {
                 shouldWait = true;
             }
@@ -569,9 +553,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         setTargetDate(tDate);
         setIsWaiting(shouldWait);
         
-        // Initial Waiting Room Check
         if (user.role === UserRole.CLIENT) {
-           // Don't assume admitted yet, let DB verify via realtime/storage
            setIsAdmitted(false); 
         }
 
@@ -592,31 +574,22 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
   }, [meetingId]);
 
-  // --- 3. WEBRTC SETUP & WAITING ROOM LOGIC ---
+  // 2. REALTIME SUBSCRIPTION
   useEffect(() => {
-    if (isWaiting || !webcamStream) return;
+    if (!meeting) return;
 
     const setupRealtime = async () => {
-      // User inserts self into participants table (with waiting or admitted status)
-      // This DB call determines the initial status based on Host/Staff logic
-      await storageService.joinMeetingRoom(meetingId, user);
-
       const channel = storageService.subscribeToMeeting(
         meetingId,
         (participants) => {
-          // --- WAITING ROOM LOGIC: FILTER PARTICIPANTS ---
-          
-          // Normalize Status if missing (Fallback for existing records)
           const normalizedParticipants = participants.map(p => {
               if (p.status) return p;
-              // Fallback for legacy records: If no status, assume admitted for non-clients, waiting for clients
               return {
                   ...p,
                   status: p.role === 'CLIENT' ? 'waiting' : 'admitted'
               } as Participant;
           });
           
-          // 1. Check My Own Status
           const myParticipantRecord = normalizedParticipants.find(p => p.user_id === user.id);
           if (myParticipantRecord) {
               if (myParticipantRecord.status === 'admitted') {
@@ -626,15 +599,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
               }
           }
 
-          // 2. Separate Active vs Waiting (For Host View)
           const admitted = normalizedParticipants.filter(p => p.status === 'admitted');
           const waiting = normalizedParticipants.filter(p => p.status === 'waiting');
-
           const othersAdmitted = admitted.filter(p => p.user_id !== user.id);
+          
           setActiveParticipants(othersAdmitted);
           setWaitingParticipants(waiting);
           
-          // Cleanup connections for people who left or moved to waiting (unlikely)
           const currentAdmittedIds = othersAdmitted.map(p => p.user_id);
           peerConnections.current.forEach((_, id) => {
             if (!currentAdmittedIds.includes(id)) {
@@ -646,17 +617,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       );
       
       channelRef.current = channel;
-      setLoading(false);
-
-      // Only send ready signal if actually admitted
-      // We check state inside the effect interval or via dependency, but here we do it after short delay
-      // to ensure state propagates
-      if (user.role !== UserRole.CLIENT) {
-          // Admins/Members assume ready, but isAdmitted check above handles confirmation
-          setTimeout(() => {
-            storageService.sendSignal(channel, { type: 'ready', from: user.id });
-          }, 1000);
-      }
     };
 
     setupRealtime();
@@ -664,19 +624,18 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => {
       channelRef.current?.unsubscribe();
     };
-  }, [isWaiting, webcamStream]); 
-  
-  // Re-trigger ready signal when client finally gets admitted
+  }, [meeting]); 
+
+  // 3. READY SIGNAL WHEN ADMITTED
   useEffect(() => {
-      if (isAdmitted && channelRef.current && user.role === UserRole.CLIENT) {
+      if (isAdmitted && channelRef.current && !isWaiting && webcamStream) {
           setTimeout(() => {
              storageService.sendSignal(channelRef.current, { type: 'ready', from: user.id });
           }, 500);
       }
-  }, [isAdmitted]);
+  }, [isAdmitted, isWaiting, webcamStream]);
 
 
-  // --- WEBRTC CORE (Simplified) ---
   const createPeerConnection = (targetUserId: string) => {
     if (peerConnections.current.has(targetUserId)) {
         return peerConnections.current.get(targetUserId);
@@ -731,17 +690,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return; 
     
-    // FORCE END SIGNAL (Triggered by Host)
     if (signal.type === 'force-end') {
-        performCleanup(); // Stop streams immediately
-        setHostEndedMeeting(true); // Trigger custom modal instead of alert
+        performCleanup(); 
+        setHostEndedMeeting(true); 
         return;
     }
 
     if (signal.type === 'leave') {
         setActiveParticipants(prev => prev.filter(p => p.user_id !== signal.from));
         closePeerConnection(signal.from);
-        if (pinnedUserId === signal.from) setPinnedUserId(null); // Unpin if leaver was pinned
+        if (pinnedUserId === signal.from) setPinnedUserId(null); 
         return;
     }
     if (signal.type === 'chat') {
@@ -764,8 +722,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
 
     if (signal.to && signal.to !== user.id) return;
-
-    // Ignore WebRTC signals if not admitted yet
     if (!isAdmitted) return;
 
     const { type, from, candidate, sdp } = signal;
@@ -801,7 +757,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
   };
 
-  // --- ACTIONS ---
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -886,9 +841,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const handlePin = (id: string) => {
       if (pinnedUserId === id) {
-          setPinnedUserId(null); // Unpin
+          setPinnedUserId(null); 
       } else {
-          setPinnedUserId(id); // Pin
+          setPinnedUserId(id); 
       }
   };
 
@@ -909,9 +864,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const handleLeave = async () => {
     setIsLeaving(true);
-
     const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
-
     if (channelRef.current) {
         if (isHost) {
            await storageService.sendSignal(channelRef.current, { type: 'force-end', from: user.id });
@@ -919,22 +872,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            await storageService.sendSignal(channelRef.current, { type: 'leave', from: user.id });
         }
     }
-    
-    webcamStreamRef.current?.getTracks().forEach(track => track.stop());
     onEndCall();
   };
 
   const handleCountdownComplete = () => {
-    // Show loading spinner briefly while accessing camera
     setLoading(true);
     setIsWaiting(false);
     startWebcam();
   };
 
-  // --- RENDER ---
-
   if (isLeaving) return <div className="h-[100dvh] w-full bg-slate-950 flex items-center justify-center"></div>;
-  
   if (loading) return (
     <div className="h-[100dvh] bg-slate-950 flex flex-col items-center justify-center text-white gap-4">
         <div className="w-12 h-12 border-4 border-slate-800 border-t-blue-600 rounded-full animate-spin"></div>
@@ -942,7 +889,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     </div>
   );
 
-  // COUNTDOWN VIEW (Before time)
   if (isWaiting && targetDate && meeting) {
     return (
         <CountdownView 
@@ -954,7 +900,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     );
   }
 
-  // FALLBACK WAITING (If no target date but status is not live)
   if (isWaiting) return (
       <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-4">
         <h1 className="text-2xl font-bold text-white mb-4">Waiting for Host</h1>
@@ -963,18 +908,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       </div>
   );
 
-  // WAITING ROOM VIEW (For Client not yet admitted)
   if (!isAdmitted && meeting) {
       return <WaitingRoomView meeting={meeting} onLeave={handleLeave} />;
   }
 
   const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
-
-  // Layout Logic
   const isPinnedMode = pinnedUserId !== null;
   const isHost = meeting?.host === user.name || user.role === UserRole.ADMIN;
   
-  // Helper to render local user
   const renderLocalUser = (isInGrid: boolean) => (
       <div className={`relative w-full ${isInGrid ? (activeParticipants.length === 0 ? 'aspect-[3/4] md:aspect-video' : 'aspect-video') : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
           <LocalVideoPlayer 
@@ -989,7 +930,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       </div>
   );
 
-  // Helper to render a remote user
   const renderRemoteUser = (p: Participant, isInGrid: boolean) => (
       <div className={`relative w-full ${isInGrid ? 'aspect-video' : 'h-full'} ${!isInGrid ? 'bg-black' : ''}`}>
           <RemoteVideoPlayer 
@@ -1005,8 +945,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
       <div className="flex-1 flex flex-col h-full relative">
-        
-        {/* Header */}
         <div className="absolute top-2 left-2 right-2 md:top-4 md:left-4 md:right-4 z-10 flex justify-between items-start pointer-events-none">
           <div className="bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 pointer-events-auto shadow-lg max-w-[calc(100%-80px)]">
              <div className="flex items-center gap-2 md:gap-3">
@@ -1019,7 +957,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           </div>
         </div>
 
-        {/* Video Area */}
         <div className="flex-1 p-2 pt-20 pb-32 md:p-4 md:pt-24 md:pb-24 overflow-hidden relative">
            {permissionError && (
              <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-950/90 backdrop-blur-sm px-4">
@@ -1032,9 +969,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
              </div>
            )}
 
-           {/* --- LAYOUT LOGIC --- */}
            {!isPinnedMode ? (
-               // GRID LAYOUT
                <div className="h-full overflow-y-auto custom-scrollbar">
                    <div className={`grid gap-2 md:gap-4 h-full content-center transition-all duration-300 ${
                       activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : 
@@ -1048,19 +983,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
                    </div>
                </div>
            ) : (
-               // PINNED (SPOTLIGHT) LAYOUT
                <div className="flex flex-col md:flex-row h-full gap-2 md:gap-4">
-                   {/* Main Stage (Pinned) */}
                    <div className="flex-1 rounded-2xl overflow-hidden bg-black shadow-2xl relative order-1 md:order-2">
                        {pinnedUserId === 'local' 
                            ? renderLocalUser(false) 
                            : activeParticipants.filter(p => p.user_id === pinnedUserId).map(p => renderRemoteUser(p, false))
                        }
                    </div>
-
-                   {/* Side Strip (Others) */}
                    <div className="h-32 md:h-full md:w-64 overflow-x-auto md:overflow-y-auto flex md:flex-col gap-2 order-2 md:order-1 shrink-0 no-scrollbar">
-                       {/* Show everyone who is NOT pinned */}
                        {pinnedUserId !== 'local' && (
                            <div className="min-w-[160px] md:min-w-0 md:h-40 shrink-0 aspect-video rounded-xl overflow-hidden border border-slate-800">
                                {renderLocalUser(false)}
@@ -1076,7 +1006,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            )}
         </div>
 
-        {/* MEETING ENDED MODAL (REPLACES ALERT) */}
         {hostEndedMeeting && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
              <div className="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transform scale-100 p-6 text-center">
@@ -1096,36 +1025,28 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           </div>
         )}
 
-        {/* Controls */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-40 w-[95%] max-w-fit">
           <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-x-auto no-scrollbar">
              <div className="flex items-center justify-between gap-2 p-2 md:px-6 md:py-3 min-w-max">
                 <button onClick={toggleMute} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isMuted ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                 </button>
-                
                 <button onClick={toggleVideo} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 ${isVideoOff ? 'bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                 </button>
-
                 <button onClick={toggleScreenShare} className={`p-3 md:p-3.5 rounded-xl transition-all duration-200 hidden sm:block ${isScreenSharing ? 'bg-green-600 text-white shadow-lg shadow-green-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     <MonitorUp className="w-5 h-5" />
                 </button>
-
                 <div className="w-px h-8 bg-slate-700 mx-1 hidden sm:block"></div>
-
                 <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     <Users className="w-5 h-5" />
                     {(activeParticipants.length > 0 || waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-green-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{activeParticipants.length + 1 + waitingParticipants.length}</span>}
                 </button>
-
                 <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     <MessageSquare className="w-5 h-5" />
                     {chatMessages.length > 0 && !showSidebar && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-slate-900"></span>}
                 </button>
-
                 <div className="w-px h-8 bg-slate-700 mx-1"></div>
-
                 <button onClick={handleLeave} className="px-4 md:px-6 py-3 md:py-3.5 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20 flex items-center gap-2 whitespace-nowrap">
                     <PhoneOff className="w-5 h-5" />
                     <span className="hidden md:inline">{isHost ? 'End All' : 'Leave'}</span>
@@ -1135,7 +1056,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         </div>
       </div>
 
-      {/* Sidebar - Higher Z-Index */}
       {showSidebar && (
         <div className="fixed inset-y-0 right-0 z-50 w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col h-full animate-[slideLeft_0.2s_ease-out] shadow-2xl">
            <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900 pt-safe-top">
@@ -1171,7 +1091,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            {showSidebar === 'participants' && (
               <div className="flex-1 overflow-y-auto bg-slate-900 custom-scrollbar">
                  <div className="p-2 space-y-1">
-                    {/* HOST CONTROLS: WAITING ROOM */}
                     {isHost && waitingParticipants.length > 0 && (
                         <div className="mb-4 bg-slate-800/50 rounded-xl overflow-hidden border border-slate-700">
                              <div className="px-3 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center">

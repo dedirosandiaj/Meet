@@ -113,9 +113,13 @@ export const storageService = {
   joinMeetingRoom: async (meetingId: string, user: User): Promise<'admitted' | 'waiting'> => {
     try {
       const { data: meeting } = await supabase.from('meetings').select('host').eq('id', meetingId).maybeSingle();
+      
       const isHost = meeting && meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
-      const isStaff = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
-      const initialStatus = (isHost || isStaff) ? 'admitted' : 'waiting';
+      // LOGIC BARU: Admin dan Member otomatis admitted. Hanya Client yang waiting.
+      const userRole = (user.role || '').toUpperCase();
+      const isPrivileged = userRole === 'ADMIN' || userRole === 'MEMBER';
+      
+      const initialStatus = (isHost || isPrivileged) ? 'admitted' : 'waiting';
 
       await supabase.from('participants').upsert({
           meeting_id: meetingId,

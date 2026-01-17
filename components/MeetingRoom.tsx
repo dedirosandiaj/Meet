@@ -187,9 +187,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
       if (!countdownActive) {
           startWebcam(); // Start cam early if not in countdown
-          // Note: isAdmitted will be confirmed by the real-time subscription update
-          // Optimistically set status so host sees room immediately
-          if (initialStatus === 'admitted') {
+          
+          // Logic baru: Admin & Member otomatis admitted visualnya.
+          const isPrivileged = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
+          
+          if (initialStatus === 'admitted' || isPrivileged) {
             setIsAdmitted(true);
           }
       }

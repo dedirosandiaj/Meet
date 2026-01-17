@@ -29,7 +29,9 @@ import {
   Calendar,
   Clock,
   Loader2,
-  Home
+  Home,
+  UserCheck,
+  Lock
 } from 'lucide-react';
 
 interface MeetingRoomProps {
@@ -169,6 +171,40 @@ const CountdownView = ({ targetDate, meeting, onBack, onComplete }: { targetDate
         </div>
     </div>
   );
+};
+
+// --- COMPONENT: WAITING ROOM UI (FOR CLIENT) ---
+const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () => void }) => {
+    return (
+        <div className="h-[100dvh] w-full bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+             {/* Background Elements */}
+             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+                 <div className="absolute top-[-20%] right-[-20%] w-[50%] h-[50%] bg-orange-600/5 rounded-full blur-[100px]"></div>
+                 <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-blue-600/5 rounded-full blur-[100px]"></div>
+             </div>
+
+             <div className="relative z-10 text-center max-w-lg bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-8 rounded-3xl shadow-2xl">
+                 <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-slate-900 shadow-xl">
+                     <Lock className="w-8 h-8 text-blue-400" />
+                 </div>
+                 
+                 <h1 className="text-2xl font-bold text-white mb-2">Please wait, the meeting host will let you in soon.</h1>
+                 <p className="text-slate-400 text-sm mb-8">{meeting.title}</p>
+                 
+                 <div className="flex items-center justify-center gap-2 text-xs text-slate-500 bg-slate-900/50 py-2 px-4 rounded-full mx-auto w-fit border border-slate-800 mb-8">
+                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                     Waiting for admittance...
+                 </div>
+
+                 <button 
+                     onClick={onLeave}
+                     className="w-full py-3 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl font-medium transition-colors"
+                 >
+                     Leave
+                 </button>
+             </div>
+        </div>
+    );
 };
 
 // --- CUSTOM HOOK: AUDIO LEVEL VISUALIZER ---
@@ -450,6 +486,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [loading, setLoading] = useState(true);
   const [isLeaving, setIsLeaving] = useState(false);
   
+  // NEW STATE: Client Admittance Status
+  const [isAdmitted, setIsAdmitted] = useState<boolean>(true); // Default true for hosts, checked for clients
+
   // NEW STATE: Meeting Ended by Host
   const [hostEndedMeeting, setHostEndedMeeting] = useState(false);
 
@@ -462,6 +501,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const screenStreamRef = useRef<MediaStream | null>(null);
   
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
+  const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]); // New state for waiting room
+
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const [remoteScreenShares, setRemoteScreenShares] = useState<Set<string>>(new Set());
   
@@ -507,10 +548,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         setTargetDate(tDate);
         setIsWaiting(shouldWait);
         
+        // Initial Waiting Room Check
+        if (user.role === UserRole.CLIENT) {
+           setIsAdmitted(false); // Clients assume waiting until confirmed
+        }
+
         if (!shouldWait) {
           startWebcam();
         } else {
-          // --- FIX: Stop loading to show Countdown View ---
           setLoading(false);
         }
       } else {
@@ -525,22 +570,39 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     };
   }, [meetingId]);
 
-  // --- 3. WEBRTC SETUP ---
+  // --- 3. WEBRTC SETUP & WAITING ROOM LOGIC ---
   useEffect(() => {
     if (isWaiting || !webcamStream) return;
 
     const setupRealtime = async () => {
+      // User inserts self into participants table (with waiting or admitted status)
       await storageService.joinMeetingRoom(meetingId, user);
 
       const channel = storageService.subscribeToMeeting(
         meetingId,
         (participants) => {
-          const others = participants.filter(p => p.user_id !== user.id);
-          setActiveParticipants(others);
+          // --- WAITING ROOM LOGIC: FILTER PARTICIPANTS ---
           
-          const currentIds = others.map(p => p.user_id);
+          // 1. Check My Own Status
+          const myParticipantRecord = participants.find(p => p.user_id === user.id);
+          if (myParticipantRecord && myParticipantRecord.status === 'admitted') {
+              setIsAdmitted(true);
+          } else if (user.role === UserRole.CLIENT) {
+              setIsAdmitted(false);
+          }
+
+          // 2. Separate Active vs Waiting (For Host View)
+          const admitted = participants.filter(p => p.status === 'admitted');
+          const waiting = participants.filter(p => p.status === 'waiting');
+
+          const othersAdmitted = admitted.filter(p => p.user_id !== user.id);
+          setActiveParticipants(othersAdmitted);
+          setWaitingParticipants(waiting);
+          
+          // Cleanup connections for people who left or moved to waiting (unlikely)
+          const currentAdmittedIds = othersAdmitted.map(p => p.user_id);
           peerConnections.current.forEach((_, id) => {
-            if (!currentIds.includes(id)) {
+            if (!currentAdmittedIds.includes(id)) {
               closePeerConnection(id);
             }
           });
@@ -551,9 +613,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       channelRef.current = channel;
       setLoading(false);
 
-      setTimeout(() => {
-        storageService.sendSignal(channel, { type: 'ready', from: user.id });
-      }, 1000);
+      // Only send ready signal if actually admitted
+      if (user.role !== UserRole.CLIENT || isAdmitted) {
+          setTimeout(() => {
+            storageService.sendSignal(channel, { type: 'ready', from: user.id });
+          }, 1000);
+      }
     };
 
     setupRealtime();
@@ -562,6 +627,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       channelRef.current?.unsubscribe();
     };
   }, [isWaiting, webcamStream]); 
+  
+  // Re-trigger ready signal when client finally gets admitted
+  useEffect(() => {
+      if (isAdmitted && channelRef.current && user.role === UserRole.CLIENT) {
+          setTimeout(() => {
+             storageService.sendSignal(channelRef.current, { type: 'ready', from: user.id });
+          }, 500);
+      }
+  }, [isAdmitted]);
+
 
   // --- WEBRTC CORE (Simplified) ---
   const createPeerConnection = (targetUserId: string) => {
@@ -651,6 +726,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
 
     if (signal.to && signal.to !== user.id) return;
+
+    // Ignore WebRTC signals if not admitted yet
+    if (!isAdmitted) return;
 
     const { type, from, candidate, sdp } = signal;
     const channel = channelRef.current;
@@ -776,6 +854,10 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       }
   };
 
+  const handleAdmit = async (participantId: string) => {
+      await storageService.admitParticipant(meetingId, participantId);
+  };
+
   const performCleanup = () => {
     if (isCleaningUp.current) return;
     isCleaningUp.current = true;
@@ -822,7 +904,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     </div>
   );
 
-  // COUNTDOWN VIEW
+  // COUNTDOWN VIEW (Before time)
   if (isWaiting && targetDate && meeting) {
     return (
         <CountdownView 
@@ -842,6 +924,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         <button onClick={onEndCall} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors">Return to Dashboard</button>
       </div>
   );
+
+  // WAITING ROOM VIEW (For Client not yet admitted)
+  if (!isAdmitted && meeting) {
+      return <WaitingRoomView meeting={meeting} onLeave={handleLeave} />;
+  }
 
   const localStreamDisplay = isScreenSharing ? screenStreamRef.current : webcamStream;
 
@@ -991,7 +1078,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
                 <button onClick={() => setShowSidebar(showSidebar === 'participants' ? null : 'participants')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'participants' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
                     <Users className="w-5 h-5" />
-                    {activeParticipants.length > 0 && <span className="absolute -top-1 -right-1 bg-green-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{activeParticipants.length + 1}</span>}
+                    {(activeParticipants.length > 0 || waitingParticipants.length > 0) && <span className="absolute -top-1 -right-1 bg-green-500 text-[10px] w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 font-bold">{activeParticipants.length + 1 + waitingParticipants.length}</span>}
                 </button>
 
                 <button onClick={() => setShowSidebar(showSidebar === 'chat' ? null : 'chat')} className={`p-3 md:p-3.5 rounded-xl transition-all relative ${showSidebar === 'chat' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-white hover:bg-slate-700'}`}>
@@ -1046,6 +1133,34 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
            {showSidebar === 'participants' && (
               <div className="flex-1 overflow-y-auto bg-slate-900 custom-scrollbar">
                  <div className="p-2 space-y-1">
+                    {/* HOST CONTROLS: WAITING ROOM */}
+                    {isHost && waitingParticipants.length > 0 && (
+                        <div className="mb-4 bg-slate-800/50 rounded-xl overflow-hidden border border-slate-700">
+                             <div className="px-3 py-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+                                 <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Waiting Room ({waitingParticipants.length})</span>
+                             </div>
+                             {waitingParticipants.map(p => (
+                                 <div key={p.id} className="flex items-center gap-2 p-3 border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30 transition-colors">
+                                     <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white font-bold">{p.name.charAt(0)}</div>
+                                     <div className="flex-1 min-w-0">
+                                         <p className="text-sm font-medium text-white truncate">{p.name}</p>
+                                         <p className="text-[10px] text-slate-500">Waiting to join</p>
+                                     </div>
+                                     <button 
+                                         onClick={() => handleAdmit(p.user_id)}
+                                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg transition-colors shadow-lg shadow-blue-500/20"
+                                     >
+                                         Admit
+                                     </button>
+                                 </div>
+                             ))}
+                        </div>
+                    )}
+
+                    <div className="px-3 py-2">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Meeting</span>
+                    </div>
+
                     <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl transition-colors">
                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-sm font-bold text-white shadow-lg shadow-blue-600/20">{user.name.charAt(0)}</div>
                        <div className="flex-1"><p className="text-sm font-medium text-white">{user.name} <span className="text-slate-500">(You)</span></p><p className="text-xs text-blue-400">Host</p></div>

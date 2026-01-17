@@ -1,3 +1,4 @@
+
 import { User, Meeting, UserRole, Participant, AppSettings } from '../types';
 import { supabase } from './supabaseClient';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -195,7 +196,7 @@ export const storageService = {
   // --- REALTIME PARTICIPANTS & SIGNALING ---
 
   joinMeetingRoom: async (meetingId: string, user: User) => {
-    // Clean up potentially stale entries first (optional but good for hygiene)
+    // Check if entry exists
     const { data: existing } = await supabase
         .from('participants')
         .select('*')
@@ -204,14 +205,26 @@ export const storageService = {
         .maybeSingle();
 
     if (!existing) {
+        // LOGIC WAITING ROOM: CLIENT = waiting, OTHERS = admitted
+        const initialStatus = user.role === UserRole.CLIENT ? 'waiting' : 'admitted';
+
         await supabase.from('participants').insert({
             meeting_id: meetingId,
             user_id: user.id,
             name: user.name,
             avatar: user.avatar,
-            role: user.role
+            role: user.role,
+            status: initialStatus
         });
     }
+  },
+
+  admitParticipant: async (meetingId: string, userId: string) => {
+      await supabase
+        .from('participants')
+        .update({ status: 'admitted' })
+        .eq('meeting_id', meetingId)
+        .eq('user_id', userId);
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
@@ -241,7 +254,7 @@ export const storageService = {
     });
 
     channel
-        // Listen for DB changes on participants table
+        // Listen for DB changes on participants table (INSERT, UPDATE, DELETE)
         .on(
             'postgres_changes', 
             { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, 

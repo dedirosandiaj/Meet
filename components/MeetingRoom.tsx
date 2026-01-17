@@ -109,27 +109,69 @@ const WaitingRoomView = ({ meeting, onLeave }: { meeting: Meeting, onLeave: () =
     );
 };
 
-// --- VIDEO PLAYER COMPONENTS ---
-const LocalVideoPlayer = ({ stream, isMuted, isVideoOff, user }: any) => {
+// --- VIDEO PLAYER COMPONENT (Unified) ---
+const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => { if (videoRef.current && stream) { videoRef.current.srcObject = stream; videoRef.current.muted = true; } }, [stream]);
-  return (
-    <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
-        <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover scale-x-[-1] ${isVideoOff ? 'hidden' : 'block'}`} />
-        {isVideoOff && <div className="absolute inset-0 flex items-center justify-center bg-slate-800"><div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-3xl font-bold text-white">{user.name.charAt(0)}</div></div>}
-        <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium z-10 flex items-center gap-2"><span>{user.name} (You)</span>{isMuted && <MicOff className="w-3 h-3 text-red-500" />}</div>
-    </div>
-  );
-};
 
-const RemoteVideoPlayer = ({ stream, participant }: any) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream]);
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      // Important: Local video must be muted to prevent echo
+      if (isLocal) {
+          videoRef.current.muted = true;
+          videoRef.current.volume = 0;
+      } else {
+          // Attempt to play remote video automatically
+          videoRef.current.play().catch(e => console.log("Autoplay blocked:", e));
+      }
+    }
+  }, [stream, isLocal]);
+
+  const displayName = isLocal ? `${user.name} (You)` : participant?.name || 'Unknown';
+  
+  // Handling "Connecting..." state for remote users
+  const showConnecting = !isLocal && !stream;
+
   return (
-     <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 transition-all">
-       {stream ? <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" /> : <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800 text-slate-500"><Loader2 className="w-6 h-6 animate-spin mb-2 text-blue-500" /><span className="text-xs">Connecting...</span></div>}
-       <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium z-10"><span>{participant.name}</span></div>
-     </div>
+    <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group">
+      {/* Video Element */}
+      <video 
+        ref={videoRef} 
+        autoPlay 
+        playsInline 
+        muted={isLocal} 
+        className={`w-full h-full object-cover transition-transform duration-300 ${isLocal ? 'scale-x-[-1]' : ''} ${(isVideoOff || showConnecting) ? 'opacity-0' : 'opacity-100'}`} 
+      />
+      
+      {/* Avatar / Connecting State */}
+      {(isVideoOff || showConnecting) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-800 z-10">
+          {showConnecting ? (
+            <>
+                <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-3" />
+                <span className="text-slate-400 text-sm font-medium animate-pulse">Connecting...</span>
+            </>
+          ) : (
+            <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-4xl font-bold text-white shadow-lg">
+                {(isLocal ? user.name : participant?.name || '?').charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Name Tag */}
+      <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl text-white text-sm font-semibold z-20 flex items-center gap-2 shadow-sm">
+        <span>{displayName}</span>
+        {isLocal && isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+      </div>
+      
+      {/* Connection Indicator (Debug) */}
+      {!isLocal && stream && (
+         <div className="absolute top-4 right-4 bg-green-500/20 text-green-400 px-2 py-1 rounded text-[10px] font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+            LIVE
+         </div>
+      )}
+    </div>
   );
 };
 
@@ -139,10 +181,16 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [targetDate, setTargetDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmitted, setIsAdmitted] = useState<boolean>(false);
+  
+  // Media States
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
+  
+  // Participant States
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
   const [waitingParticipants, setWaitingParticipants] = useState<Participant[]>([]);
+  
+  // WebRTC States
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   const channelRef = useRef<RealtimeChannel | null>(null);
   
@@ -150,6 +198,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   const iceCandidateQueues = useRef<Map<string, RTCIceCandidate[]>>(new Map());
   
+  // Controls
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [showSidebar, setShowSidebar] = useState<'chat' | 'participants' | null>(null);
@@ -157,7 +206,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [newMessage, setNewMessage] = useState('');
   const [syncing, setSyncing] = useState(false);
 
-  // STARTUP LOGIC
+  // --- INITIALIZATION ---
   useEffect(() => {
     const startup = async () => {
       const meetings = await storageService.getMeetings();
@@ -165,7 +214,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!found) { setLoading(false); return; }
       setMeeting(found);
 
-      // Register initial state
+      // Register initial state in DB
       const initialStatus = await storageService.joinMeetingRoom(meetingId, user);
       
       // Setup countdown
@@ -174,9 +223,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       const countdownActive = found.status !== 'live' && tDate > new Date();
       setIsWaiting(countdownActive);
 
-      // Ensure webcam is started if we are not in countdown (even if in waiting room)
+      // Start webcam if not in countdown
       if (!countdownActive) {
-          startWebcam(); 
+          await startWebcam(); 
           
           const isPrivileged = user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
           if (initialStatus === 'admitted' || isPrivileged) {
@@ -209,7 +258,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => performCleanup();
   }, [meetingId]);
 
-  // POLLING SAFETY NET
+  // Polling Safety Net
   useEffect(() => {
     if (!meeting) return;
     const isHost = meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
@@ -225,10 +274,9 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => clearInterval(interval);
   }, [meetingId, meeting, user.role, user.name]);
 
-  // TRIGGER SIGNALING WHEN ADMITTED
+  // Trigger Signal when Admitted and Media Ready
   useEffect(() => {
       if (isAdmitted && !isWaiting && webcamStream) {
-          // Send 'ready' to announce presence to existing peers
           const timer = setTimeout(() => {
              triggerReadySignal();
           }, 1000);
@@ -238,6 +286,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const triggerReadySignal = () => {
      if (channelRef.current) {
+         console.log("Broadcasting READY signal...");
          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
      }
   };
@@ -245,27 +294,63 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const startWebcam = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      webcamStreamRef.current = stream; setWebcamStream(stream);
-    } catch (err) { console.error("Media access denied"); }
+      webcamStreamRef.current = stream; 
+      setWebcamStream(stream);
+      return stream;
+    } catch (err) { 
+        console.error("Media access denied", err); 
+        return null;
+    }
   };
 
+  // --- WEBRTC LOGIC ---
+
   const createPeerConnection = (targetUserId: string) => {
-    if (peerConnections.current.has(targetUserId)) return peerConnections.current.get(targetUserId);
-    
-    const pc = new RTCPeerConnection(ICE_SERVERS);
-    
-    if (webcamStreamRef.current) {
-        webcamStreamRef.current.getTracks().forEach(t => pc.addTrack(t, webcamStreamRef.current!));
+    if (peerConnections.current.has(targetUserId)) {
+        return peerConnections.current.get(targetUserId);
     }
     
+    console.log(`Creating PeerConnection for ${targetUserId}`);
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    
+    // ADD TRACKS IMMEDIATELY
+    if (webcamStreamRef.current) {
+        webcamStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, webcamStreamRef.current!);
+        });
+    } else {
+        console.warn("Creating PC but webcamStreamRef is null!");
+    }
+    
+    // HANDLE ICE CANDIDATES
     pc.onicecandidate = (e) => { 
-        if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: targetUserId, payload: { type: 'candidate', candidate: e.candidate } }); 
+        if (e.candidate) {
+            storageService.sendSignal(channelRef.current, { 
+                type: 'signal', 
+                from: user.id, 
+                to: targetUserId, 
+                payload: { type: 'candidate', candidate: e.candidate } 
+            }); 
+        }
     };
     
+    // HANDLE INCOMING TRACKS
     pc.ontrack = (e) => {
-        setRemoteStreams(prev => new Map(prev).set(targetUserId, e.streams[0]));
+        console.log(`Received remote track from ${targetUserId}`, e.streams[0]);
+        if (e.streams[0]) {
+            setRemoteStreams(prev => {
+                const newMap = new Map(prev);
+                newMap.set(targetUserId, e.streams[0]);
+                return newMap;
+            });
+        }
     };
     
+    // DEBUG STATE CHANGES
+    pc.onconnectionstatechange = () => {
+        console.log(`PC State [${targetUserId}]: ${pc.connectionState}`);
+    };
+
     peerConnections.current.set(targetUserId, pc);
     return pc;
   };
@@ -273,6 +358,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return;
 
+    // Chat
     if(signal.type === 'chat') {
         setChatMessages(p => [...p, { id: Date.now().toString(), sender: signal.senderName, text: signal.payload.text, time: formatTime(), isSelf: false }]); 
         return; 
@@ -282,58 +368,62 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     try {
         const { from, to, payload } = signal;
-        if (to && to !== user.id) return;
+        if (to && to !== user.id) return; // Signal meant for someone else
         
         const { sdp, candidate } = payload;
         
         if (payload.type === 'ready') { 
-          const pc = createPeerConnection(from)!; 
-          const offer = await pc.createOffer(); 
-          await pc.setLocalDescription(offer); 
-          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'offer', sdp: offer } }); 
+            console.log(`Received READY from ${from}. Creating Offer.`);
+            const pc = createPeerConnection(from)!; 
+            const offer = await pc.createOffer(); 
+            await pc.setLocalDescription(offer); 
+            storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'offer', sdp: offer } }); 
         
         } else if (payload.type === 'offer') { 
-          const pc = createPeerConnection(from)!; 
-          await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
-          const ans = await pc.createAnswer(); 
-          await pc.setLocalDescription(ans); 
-          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'answer', sdp: ans } }); 
-          
-          // Process any queued candidates
-          const queue = iceCandidateQueues.current.get(from) || [];
-          for (const c of queue) {
-              await pc.addIceCandidate(c).catch(e => console.warn("Failed to add queued candidate", e));
-          }
-          iceCandidateQueues.current.delete(from);
+            console.log(`Received OFFER from ${from}. Sending Answer.`);
+            const pc = createPeerConnection(from)!; 
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
+            const ans = await pc.createAnswer(); 
+            await pc.setLocalDescription(ans); 
+            storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'answer', sdp: ans } }); 
+            
+            processCandidateQueue(from, pc);
 
         } else if (payload.type === 'answer') { 
-          const pc = peerConnections.current.get(from); 
-          if (pc) {
-              await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-              // Process queued candidates
-              const queue = iceCandidateQueues.current.get(from) || [];
-              for (const c of queue) {
-                  await pc.addIceCandidate(c).catch(e => console.warn("Failed to add queued candidate", e));
-              }
-              iceCandidateQueues.current.delete(from);
-          }
+            console.log(`Received ANSWER from ${from}.`);
+            const pc = peerConnections.current.get(from); 
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                processCandidateQueue(from, pc);
+            }
 
         } else if (payload.type === 'candidate') { 
-          const pc = peerConnections.current.get(from); 
-          if (pc && candidate) {
-              // Critical Fix: Only add candidate if remote description is set. Otherwise queue it.
-              if (pc.remoteDescription) {
-                  await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn("Error adding candidate", e));
-              } else {
-                  const queue = iceCandidateQueues.current.get(from) || [];
-                  queue.push(new RTCIceCandidate(candidate));
-                  iceCandidateQueues.current.set(from, queue);
-              }
-          }
+            const pc = peerConnections.current.get(from); 
+            if (pc && candidate) {
+                if (pc.remoteDescription) {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.warn("Error adding candidate", e));
+                } else {
+                    console.log(`Queuing candidate for ${from}`);
+                    const queue = iceCandidateQueues.current.get(from) || [];
+                    queue.push(new RTCIceCandidate(candidate));
+                    iceCandidateQueues.current.set(from, queue);
+                }
+            }
         }
     } catch (e) {
         console.error("Signal handling error:", e);
     }
+  };
+
+  const processCandidateQueue = async (userId: string, pc: RTCPeerConnection) => {
+      const queue = iceCandidateQueues.current.get(userId) || [];
+      if (queue.length > 0) {
+          console.log(`Processing ${queue.length} queued candidates for ${userId}`);
+          for (const c of queue) {
+              await pc.addIceCandidate(c).catch(e => console.warn("Failed to add queued candidate", e));
+          }
+          iceCandidateQueues.current.delete(userId);
+      }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -369,27 +459,66 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const isHost = meeting?.host.trim().toLowerCase() === user.name.trim().toLowerCase();
   const canManage = isHost || user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
 
+  // --- DYNAMIC LAYOUT CALCULATION ---
+  const tiles = [
+      { 
+        id: 'local', 
+        participant: undefined as Participant | undefined, 
+        isLocal: true, 
+        stream: webcamStream, 
+        isVideoOff, 
+        isMuted 
+      },
+      ...activeParticipants.map(p => ({
+          id: p.user_id,
+          participant: p,
+          isLocal: false,
+          stream: remoteStreams.get(p.user_id),
+          isVideoOff: false, // Could sync this via signaling if needed
+          isMuted: false
+      }))
+  ];
+
+  const totalTiles = tiles.length;
+  
+  // Tailwind Grid Classes based on count
+  let gridClass = 'grid-cols-1'; // Default 1 person
+  if (totalTiles === 2) gridClass = 'grid-cols-1 md:grid-cols-2'; // Split screen
+  else if (totalTiles === 3 || totalTiles === 4) gridClass = 'grid-cols-2';
+  else if (totalTiles > 4) gridClass = 'grid-cols-2 md:grid-cols-3';
+
   return (
     <div className="flex h-[100dvh] w-full bg-slate-950 overflow-hidden relative">
-      <div className="flex-1 flex flex-col relative">
-        <div className="absolute top-4 left-4 z-10 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-lg flex items-center justify-between gap-4 min-w-[200px]">
+      <div className="flex-1 flex flex-col relative h-full">
+        {/* Info Header */}
+        <div className="absolute top-4 left-4 z-30 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-slate-800 shadow-lg flex items-center gap-4 transition-all opacity-0 hover:opacity-100 duration-300">
            <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center"><Video className="w-4 h-4 text-blue-500" /></div>
-              <div><h1 className="font-bold text-white text-sm">{meeting?.title}</h1><p className="text-[10px] text-slate-400">ID: {meetingId}</p></div>
+              <div><h1 className="font-bold text-white text-sm whitespace-nowrap">{meeting?.title}</h1><p className="text-[10px] text-slate-400">ID: {meetingId}</p></div>
            </div>
-           {/* Manual Reconnect Button */}
-           <button onClick={triggerReadySignal} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Reconnect Video">
+           <button onClick={triggerReadySignal} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors" title="Force Reconnect">
               <RefreshCw className="w-4 h-4" />
            </button>
         </div>
 
-        <div className="flex-1 p-4 pt-20 pb-24 overflow-hidden">
-           <div className={`grid gap-4 h-full content-center transition-all ${activeParticipants.length === 0 ? 'grid-cols-1 max-w-4xl mx-auto' : (activeParticipants.length === 1 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3')}`}>
-               <LocalVideoPlayer stream={webcamStream} isMuted={isMuted} isVideoOff={isVideoOff} user={user} />
-               {activeParticipants.map(p => <RemoteVideoPlayer key={p.user_id} stream={remoteStreams.get(p.user_id)} participant={p} />)}
+        {/* MAIN VIDEO GRID */}
+        <div className="flex-1 p-4 pt-4 pb-24 overflow-hidden flex items-center justify-center">
+           <div className={`grid gap-4 w-full h-full max-w-[1600px] transition-all duration-500 ease-in-out ${gridClass} ${totalTiles === 1 ? 'max-h-full' : 'max-h-[90vh]'}`}>
+               {tiles.map((tile) => (
+                   <VideoTile 
+                      key={tile.id}
+                      stream={tile.stream}
+                      isLocal={tile.isLocal}
+                      user={user}
+                      participant={tile.participant}
+                      isMuted={tile.isMuted}
+                      isVideoOff={tile.isVideoOff}
+                   />
+               ))}
            </div>
         </div>
 
+        {/* CONTROLS BAR */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl flex items-center gap-2 p-2">
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getAudioTracks().forEach(t=>t.enabled=!t.enabled); setIsMuted(!isMuted); } }} className={`p-3.5 rounded-xl transition-colors ${isMuted ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Mic className="w-5 h-5 text-white" /></button>
             <button onClick={() => { if(webcamStreamRef.current){ webcamStreamRef.current.getVideoTracks().forEach(t=>t.enabled=!t.enabled); setIsVideoOff(!isVideoOff); } }} className={`p-3.5 rounded-xl transition-colors ${isVideoOff ? 'bg-red-500' : 'bg-slate-800 hover:bg-slate-700'}`}><Video className="w-5 h-5 text-white" /></button>

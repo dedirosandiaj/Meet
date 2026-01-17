@@ -223,6 +223,26 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => performCleanup();
   }, [meetingId]);
 
+  // POLLING SAFETY NET: Refresh participants every 5 seconds for Managers (Host/Admin/Member)
+  // This ensures that even if Realtime events miss the "Join" event, the list will eventually update.
+  useEffect(() => {
+    if (!meeting) return;
+    
+    const isHost = meeting.host.trim().toLowerCase() === user.name.trim().toLowerCase();
+    const canManage = isHost || user.role === UserRole.ADMIN || user.role === UserRole.MEMBER;
+
+    if (!canManage) return;
+
+    const interval = setInterval(async () => {
+       const allParticipants = await storageService.getParticipants(meetingId);
+       // We only update the lists, we do not touch 'isAdmitted' or 'meeting' state here to avoid flicker
+       setActiveParticipants(allParticipants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+       setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [meetingId, meeting, user.role, user.name]);
+
   // Effect to handle WebRTC signaling once admitted
   useEffect(() => {
       if (isAdmitted && !isWaiting && webcamStream) {

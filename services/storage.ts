@@ -145,7 +145,7 @@ export const storageService = {
     return (data || []) as Participant[];
   },
 
-  // Reverted to simpler, more robust Presence + Broadcast logic
+  // Robust Subscription Logic
   subscribeToMeeting: (
     meetingId: string,
     user: User,
@@ -175,7 +175,16 @@ export const storageService = {
             user_id: user.id,
             name: user.name,
           });
-          // Perform initial fetch
+          
+          // CRITICAL: Immediately tell everyone to refresh their list.
+          // This ensures the Host sees the new participant who just entered the DB.
+          await channel.send({ 
+            type: 'broadcast', 
+            event: 'refresh-list', 
+            payload: {} 
+          });
+
+          // Perform initial fetch for self
           refreshList();
         }
       });

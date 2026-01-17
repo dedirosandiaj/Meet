@@ -121,17 +121,39 @@ export const storageService = {
       
       const initialStatus = (isHost || isPrivileged) ? 'admitted' : 'waiting';
 
-      await supabase.from('participants').upsert({
+      // PERBAIKAN: Gunakan metode Select manual lalu Insert/Update.
+      // Upsert native (onConflict) menyebabkan error 400 jika DB tidak memiliki unique constraint yang sesuai.
+      const { data: existing } = await supabase
+        .from('participants')
+        .select('id')
+        .eq('meeting_id', meetingId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existing) {
+        // Jika sudah ada, update status dan info terbaru
+        await supabase.from('participants').update({
+          name: user.name,
+          avatar: user.avatar,
+          role: user.role,
+          status: initialStatus
+        }).eq('id', existing.id);
+      } else {
+        // Jika belum ada, insert baru
+        await supabase.from('participants').insert({
           meeting_id: meetingId,
           user_id: user.id,
           name: user.name,
           avatar: user.avatar,
           role: user.role,
           status: initialStatus
-      }, { onConflict: 'meeting_id, user_id' });
+        });
+      }
 
       return initialStatus;
     } catch (err) {
+      console.error("Join Room Error:", err);
+      // Fallback return waiting agar aplikasi tidak crash
       return 'waiting';
     }
   },

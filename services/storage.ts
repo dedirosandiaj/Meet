@@ -278,7 +278,7 @@ export const storageService = {
         // Listen for DB changes on participants table (INSERT, UPDATE, DELETE)
         .on(
             'postgres_changes', 
-            { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=${meetingId}` }, 
+            { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, 
             async (payload) => {
                 // Fetch fresh list on any change
                 const updated = await storageService.getParticipants(meetingId);

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { User, ChatMessage, Meeting, Participant, UserRole } from '../types';
-import { MOCK_CHAT, formatTime } from '../services/mock';
+import { formatTime } from '../services/mock';
 import { storageService } from '../services/storage';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { 
@@ -116,12 +116,10 @@ const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff }: 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      // Important: Local video must be muted to prevent echo
       if (isLocal) {
           videoRef.current.muted = true;
           videoRef.current.volume = 0;
       } else {
-          // Attempt to play remote video automatically
           videoRef.current.play().catch(e => console.log("Autoplay blocked:", e));
       }
     }
@@ -129,8 +127,8 @@ const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff }: 
 
   const displayName = isLocal ? `${user.name} (You)` : participant?.name || 'Unknown';
   
-  // Handling "Connecting..." state for remote users
-  const showConnecting = !isLocal && !stream;
+  // Logic: Show connecting if remote and no stream, OR if remote stream exists but is inactive
+  const showConnecting = !isLocal && (!stream || !stream.active);
 
   return (
     <div className="relative w-full h-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl group">
@@ -164,13 +162,6 @@ const VideoTile = ({ stream, isLocal, user, participant, isMuted, isVideoOff }: 
         <span>{displayName}</span>
         {isLocal && isMuted && <MicOff className="w-3.5 h-3.5 text-red-400" />}
       </div>
-      
-      {/* Connection Indicator (Debug) */}
-      {!isLocal && stream && (
-         <div className="absolute top-4 right-4 bg-green-500/20 text-green-400 px-2 py-1 rounded text-[10px] font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-            LIVE
-         </div>
-      )}
     </div>
   );
 };
@@ -276,17 +267,25 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // Trigger Signal when Admitted and Media Ready
   useEffect(() => {
+      // ONLY trigger signal if we are admitted, not waiting, AND we actually have a stream.
+      // This prevents sending empty offers/answers.
       if (isAdmitted && !isWaiting && webcamStream) {
+          console.log("Status: Admitted & Stream Ready. Broadcasting presence...");
           const timer = setTimeout(() => {
              triggerReadySignal();
-          }, 1000);
+          }, 1500); // Slight delay to ensure everyone is listening
           return () => clearTimeout(timer);
       }
   }, [isAdmitted, isWaiting, webcamStream]);
 
   const triggerReadySignal = () => {
      if (channelRef.current) {
-         console.log("Broadcasting READY signal...");
+         console.log(">>> Broadcasting READY signal");
+         // We close existing connections to force a refresh on reconnect
+         peerConnections.current.forEach(pc => pc.close());
+         peerConnections.current.clear();
+         setRemoteStreams(new Map());
+         
          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
      }
   };
@@ -305,6 +304,20 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   // --- WEBRTC LOGIC ---
 
+  const addLocalTracks = (pc: RTCPeerConnection) => {
+     if (webcamStreamRef.current) {
+         webcamStreamRef.current.getTracks().forEach(track => {
+             // Only add if not already added
+             const senders = pc.getSenders();
+             const alreadyHas = senders.some(s => s.track?.id === track.id);
+             if (!alreadyHas) {
+                 pc.addTrack(track, webcamStreamRef.current!);
+                 console.log("Added track to PC:", track.kind);
+             }
+         });
+     }
+  };
+
   const createPeerConnection = (targetUserId: string) => {
     if (peerConnections.current.has(targetUserId)) {
         return peerConnections.current.get(targetUserId);
@@ -313,14 +326,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     console.log(`Creating PeerConnection for ${targetUserId}`);
     const pc = new RTCPeerConnection(ICE_SERVERS);
     
-    // ADD TRACKS IMMEDIATELY
-    if (webcamStreamRef.current) {
-        webcamStreamRef.current.getTracks().forEach(track => {
-            pc.addTrack(track, webcamStreamRef.current!);
-        });
-    } else {
-        console.warn("Creating PC but webcamStreamRef is null!");
-    }
+    // Add local tracks
+    addLocalTracks(pc);
     
     // HANDLE ICE CANDIDATES
     pc.onicecandidate = (e) => { 
@@ -346,9 +353,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         }
     };
     
-    // DEBUG STATE CHANGES
     pc.onconnectionstatechange = () => {
         console.log(`PC State [${targetUserId}]: ${pc.connectionState}`);
+        if (pc.connectionState === 'failed') {
+            // Optional: Auto retry
+            console.warn("Connection failed, consider retrying");
+        }
     };
 
     peerConnections.current.set(targetUserId, pc);
@@ -358,7 +368,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return;
 
-    // Chat
     if(signal.type === 'chat') {
         setChatMessages(p => [...p, { id: Date.now().toString(), sender: signal.senderName, text: signal.payload.text, time: formatTime(), isSelf: false }]); 
         return; 
@@ -368,12 +377,13 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
     try {
         const { from, to, payload } = signal;
-        if (to && to !== user.id) return; // Signal meant for someone else
+        if (to && to !== user.id) return; 
         
         const { sdp, candidate } = payload;
         
         if (payload.type === 'ready') { 
             console.log(`Received READY from ${from}. Creating Offer.`);
+            // When someone says ready, we create a PC, add OUR tracks, and send offer
             const pc = createPeerConnection(from)!; 
             const offer = await pc.createOffer(); 
             await pc.setLocalDescription(offer); 
@@ -382,9 +392,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         } else if (payload.type === 'offer') { 
             console.log(`Received OFFER from ${from}. Sending Answer.`);
             const pc = createPeerConnection(from)!; 
+            
+            // IMPORTANT: Ensure local tracks are added before creating answer
+            addLocalTracks(pc);
+
             await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
             const ans = await pc.createAnswer(); 
             await pc.setLocalDescription(ans); 
+            
             storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'answer', sdp: ans } }); 
             
             processCandidateQueue(from, pc);
@@ -437,8 +452,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleAdmit = async (userId: string) => {
       setSyncing(true);
       await storageService.admitParticipant(meetingId, userId);
-      await storageService.sendSignal(channelRef.current, { type: 'refresh-list' });
-      setSyncing(false);
+      // Wait a bit before refreshing list to allow DB propagation
+      setTimeout(async () => {
+          await storageService.sendSignal(channelRef.current, { type: 'refresh-list' });
+          setSyncing(false);
+      }, 500);
   };
 
   const performCleanup = () => {
@@ -474,7 +492,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
           participant: p,
           isLocal: false,
           stream: remoteStreams.get(p.user_id),
-          isVideoOff: false, // Could sync this via signaling if needed
+          isVideoOff: false, 
           isMuted: false
       }))
   ];
@@ -482,8 +500,8 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const totalTiles = tiles.length;
   
   // Tailwind Grid Classes based on count
-  let gridClass = 'grid-cols-1'; // Default 1 person
-  if (totalTiles === 2) gridClass = 'grid-cols-1 md:grid-cols-2'; // Split screen
+  let gridClass = 'grid-cols-1'; 
+  if (totalTiles === 2) gridClass = 'grid-cols-1 md:grid-cols-2'; 
   else if (totalTiles === 3 || totalTiles === 4) gridClass = 'grid-cols-2';
   else if (totalTiles > 4) gridClass = 'grid-cols-2 md:grid-cols-3';
 

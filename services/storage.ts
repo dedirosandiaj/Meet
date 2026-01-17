@@ -132,18 +132,8 @@ export const storageService = {
     }
   },
 
-  admitParticipant: async (channel: RealtimeChannel | null, meetingId: string, userId: string) => {
-    // 1. Update Database (Persistence)
+  admitParticipant: async (meetingId: string, userId: string) => {
     await supabase.from('participants').update({ status: 'admitted' }).eq('meeting_id', meetingId).eq('user_id', userId);
-    
-    // 2. Broadcast Admission (Instant UI trigger for the client)
-    if (channel) {
-      await channel.send({
-        type: 'broadcast',
-        event: 'admit-action',
-        payload: { userId, meetingId }
-      });
-    }
   },
 
   leaveMeetingRoom: async (meetingId: string, userId: string) => {
@@ -155,42 +145,38 @@ export const storageService = {
     return (data || []) as Participant[];
   },
 
-  // Improved subscription using Presence
+  // Simplified and more robust subscription logic
   subscribeToMeeting: (
     meetingId: string,
     user: User,
     onParticipantsUpdate: (participants: Participant[]) => void,
-    onSignal: (payload: any) => void,
-    onAdmitted: () => void
+    onSignal: (payload: any) => void
   ): RealtimeChannel => {
     
     const channel = supabase.channel(`meeting_room_${meetingId}`, {
-      config: { presence: { key: user.id } }
+      config: { 
+        presence: { key: user.id },
+        broadcast: { self: false } // Other clients should receive my signals
+      }
     });
 
+    const refreshList = () => {
+      storageService.getParticipants(meetingId).then(onParticipantsUpdate);
+    };
+
     channel
-      .on('presence', { event: 'sync' }, () => {
-        // When presence list changes, re-fetch from DB to get latest statuses
-        storageService.getParticipants(meetingId).then(onParticipantsUpdate);
-      })
-      .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload))
-      .on('broadcast', { event: 'admit-action' }, (payload) => {
-          if (payload.payload.userId === user.id) {
-              onAdmitted();
-          }
-          // Refresh list for everyone when someone is admitted
-          storageService.getParticipants(meetingId).then(onParticipantsUpdate);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'participants', filter: `meeting_id=eq.${meetingId}` }, () => {
-          storageService.getParticipants(meetingId).then(onParticipantsUpdate);
-      })
+      .on('presence', { event: 'sync' }, refreshList) // Handles joins and leaves
+      .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload)) // For WebRTC
+      .on('broadcast', { event: 'refresh-list' }, refreshList) // For explicit actions like 'admit'
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          // Announce presence
           await channel.track({
             user_id: user.id,
             name: user.name,
-            online_at: new Date().toISOString(),
           });
+          // Perform initial fetch
+          refreshList();
         }
       });
 
@@ -199,7 +185,9 @@ export const storageService = {
 
   sendSignal: async (channel: RealtimeChannel | null, signal: any) => {
     if (channel) {
-      await channel.send({ type: 'broadcast', event: 'signal', payload: signal });
+      // The event name is now dynamic based on signal type
+      const eventName = signal.type === 'signal' || signal.type === 'chat' ? signal.type : 'refresh-list';
+      await channel.send({ type: 'broadcast', event: eventName, payload: signal });
     }
   },
 
@@ -214,7 +202,6 @@ export const storageService = {
     return data as User;
   },
 
-  // Add getUserByToken to fix the error in SetPassword.tsx
   getUserByToken: async (token: string): Promise<User | undefined> => {
     const { data, error } = await supabase.from('users').select('*').eq('token', token).maybeSingle();
     if (error || !data) return undefined;

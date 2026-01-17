@@ -154,7 +154,6 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const [targetDate, setTargetDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmitted, setIsAdmitted] = useState<boolean>(false);
-  const [pinnedUserId, setPinnedUserId] = useState<string | null>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
   const [activeParticipants, setActiveParticipants] = useState<Participant[]>([]);
@@ -177,30 +176,38 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
       if (!found) { setLoading(false); return; }
       setMeeting(found);
 
-      // Register initial state in DB
+      // Register initial state in DB, which determines if we start in waiting room
       const initialStatus = await storageService.joinMeetingRoom(meetingId, user);
-      setIsAdmitted(initialStatus === 'admitted');
-
+      
       // Setup countdown
       const tDate = parseMeetingDateTime(found.date, found.time);
       setTargetDate(tDate);
       const countdownActive = found.status !== 'live' && tDate > new Date();
       setIsWaiting(countdownActive);
 
-      // Subscribe with Presence and fast Admission feedback
+      if (!countdownActive) {
+          startWebcam(); // Start cam early if not in countdown
+          if (initialStatus === 'admitted') {
+            setIsAdmitted(true);
+          }
+      }
+
+      // Subscribe to real-time events
       const channel = storageService.subscribeToMeeting(
         meetingId,
         user,
-        (participants) => {
-          setActiveParticipants(participants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
-          setWaitingParticipants(participants.filter(p => p.status === 'waiting'));
+        (allParticipants) => {
+          // This is the single source of truth for participant state
+          const me = allParticipants.find(p => p.user_id === user.id);
+          setIsAdmitted(me?.status === 'admitted');
+          
+          setActiveParticipants(allParticipants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
+          setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
         },
-        (signal) => handleSignal(signal),
-        () => setIsAdmitted(true) // Instant feedback via Broadcast
+        (signal) => handleSignal(signal)
       );
       channelRef.current = channel;
 
-      if (!countdownActive) startWebcam();
       setLoading(false);
     };
     
@@ -208,12 +215,14 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     return () => performCleanup();
   }, [meetingId]);
 
-  // Peer Connection Signal when Admitted
+  // Effect to handle WebRTC signaling once admitted
   useEffect(() => {
-      if (isAdmitted && channelRef.current && !isWaiting && webcamStream) {
-          setTimeout(() => {
-             storageService.sendSignal(channelRef.current, { type: 'ready', from: user.id });
+      if (isAdmitted && !isWaiting && webcamStream) {
+          // Delay to ensure other clients are subscribed
+          const timer = setTimeout(() => {
+             storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
           }, 1000);
+          return () => clearTimeout(timer);
       }
   }, [isAdmitted, isWaiting, webcamStream]);
 
@@ -228,7 +237,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     if (peerConnections.current.has(targetUserId)) return peerConnections.current.get(targetUserId);
     const pc = new RTCPeerConnection(ICE_SERVERS);
     if (webcamStreamRef.current) webcamStreamRef.current.getTracks().forEach(t => pc.addTrack(t, webcamStreamRef.current!));
-    pc.onicecandidate = (e) => { if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'candidate', candidate: e.candidate, from: user.id, to: targetUserId }); };
+    pc.onicecandidate = (e) => { if (e.candidate) storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: targetUserId, payload: { type: 'candidate', candidate: e.candidate } }); };
     pc.ontrack = (e) => setRemoteStreams(prev => new Map(prev).set(targetUserId, e.streams[0]));
     peerConnections.current.set(targetUserId, pc);
     return pc;
@@ -236,37 +245,68 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
   const handleSignal = async (signal: any) => {
     if (signal.from === user.id) return;
-    if (signal.type === 'chat') { setChatMessages(p => [...p, { id: Date.now().toString(), sender: signal.senderName, text: signal.text, time: formatTime(), isSelf: false }]); return; }
-    if (signal.to && signal.to !== user.id) return;
+
+    if(signal.type === 'chat') {
+        setChatMessages(p => [...p, { id: Date.now().toString(), sender: signal.senderName, text: signal.payload.text, time: formatTime(), isSelf: false }]); 
+        return; 
+    }
+    
+    // All other signals (WebRTC) should only be processed if admitted
     if (!isAdmitted) return;
+
     try {
-        const { type, from, candidate, sdp } = signal;
-        if (type === 'ready') { const pc = createPeerConnection(from)!; const offer = await pc.createOffer(); await pc.setLocalDescription(offer); storageService.sendSignal(channelRef.current, { type: 'offer', sdp: offer, from: user.id, to: from }); }
-        else if (type === 'offer') { const pc = createPeerConnection(from)!; await pc.setRemoteDescription(new RTCSessionDescription(sdp)); const ans = await pc.createAnswer(); await pc.setLocalDescription(ans); storageService.sendSignal(channelRef.current, { type: 'answer', sdp: ans, from: user.id, to: from }); }
-        else if (type === 'answer') { const pc = peerConnections.current.get(from); if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp)); }
-        else if (type === 'candidate') { const pc = peerConnections.current.get(from); if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)); }
-    } catch (e) {}
+        const { from, to, payload } = signal;
+        if (to && to !== user.id) return;
+        
+        const { sdp, candidate } = payload;
+        
+        if (payload.type === 'ready') { 
+          const pc = createPeerConnection(from)!; 
+          const offer = await pc.createOffer(); 
+          await pc.setLocalDescription(offer); 
+          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'offer', sdp: offer } }); 
+        } else if (payload.type === 'offer') { 
+          const pc = createPeerConnection(from)!; 
+          await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
+          const ans = await pc.createAnswer(); 
+          await pc.setLocalDescription(ans); 
+          storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, to: from, payload: { type: 'answer', sdp: ans } }); 
+        } else if (payload.type === 'answer') { 
+          const pc = peerConnections.current.get(from); 
+          if (pc) await pc.setRemoteDescription(new RTCSessionDescription(sdp)); 
+        } else if (payload.type === 'candidate') { 
+          const pc = peerConnections.current.get(from); 
+          if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate)); 
+        }
+    } catch (e) {
+        console.error("Signal handling error:", e);
+    }
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault(); if (!newMessage.trim()) return;
-    setChatMessages(p => [...p, { id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true }]);
-    storageService.sendSignal(channelRef.current, { type: 'chat', text: newMessage, senderName: user.name, from: user.id });
+    const msg = { id: Date.now().toString(), sender: user.name, text: newMessage, time: formatTime(), isSelf: true };
+    setChatMessages(p => [...p, msg]);
+    storageService.sendSignal(channelRef.current, { type: 'chat', from: user.id, senderName: user.name, payload: { text: newMessage } });
     setNewMessage('');
   };
 
   const handleAdmit = async (userId: string) => {
       setSyncing(true);
-      await storageService.admitParticipant(channelRef.current, meetingId, userId);
-      // Wait for broadcast to update local list
-      setTimeout(() => setSyncing(false), 500);
+      await storageService.admitParticipant(meetingId, userId);
+      // Broadcast to everyone to refresh their lists
+      await storageService.sendSignal(channelRef.current, { type: 'refresh-list' });
+      setSyncing(false);
   };
 
   const performCleanup = () => {
     webcamStreamRef.current?.getTracks().forEach(t => t.stop());
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
-    channelRef.current?.unsubscribe();
+    // Presence will automatically handle leaving when channel is unsubscribed
+    if(channelRef.current) {
+        channelRef.current.unsubscribe();
+    }
     storageService.leaveMeetingRoom(meetingId, user.id);
   };
 

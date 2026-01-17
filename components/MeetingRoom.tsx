@@ -187,6 +187,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
 
       if (!countdownActive) {
           startWebcam(); // Start cam early if not in countdown
+          // Note: isAdmitted will be confirmed by the real-time subscription update
           if (initialStatus === 'admitted') {
             setIsAdmitted(true);
           }
@@ -199,7 +200,11 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
         (allParticipants) => {
           // This is the single source of truth for participant state
           const me = allParticipants.find(p => p.user_id === user.id);
-          setIsAdmitted(me?.status === 'admitted');
+          const amIAdmitted = me?.status === 'admitted';
+          
+          if (amIAdmitted !== isAdmitted) {
+             setIsAdmitted(amIAdmitted);
+          }
           
           setActiveParticipants(allParticipants.filter(p => p.status === 'admitted' && p.user_id !== user.id));
           setWaitingParticipants(allParticipants.filter(p => p.status === 'waiting'));
@@ -218,10 +223,12 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   // Effect to handle WebRTC signaling once admitted
   useEffect(() => {
       if (isAdmitted && !isWaiting && webcamStream) {
-          // Delay to ensure other clients are subscribed
+          // Delay slightly to ensure channel is fully established and other peers have received 'refresh-list'
           const timer = setTimeout(() => {
-             storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
-          }, 1000);
+             if (channelRef.current) {
+                 storageService.sendSignal(channelRef.current, { type: 'signal', from: user.id, payload: { type: 'ready' } });
+             }
+          }, 1500);
           return () => clearTimeout(timer);
       }
   }, [isAdmitted, isWaiting, webcamStream]);
@@ -252,6 +259,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
     }
     
     // All other signals (WebRTC) should only be processed if admitted
+    // We check state directly here to be safe
     if (!isAdmitted) return;
 
     try {
@@ -294,7 +302,7 @@ const MeetingRoom: React.FC<MeetingRoomProps> = ({ user, meetingId, onEndCall })
   const handleAdmit = async (userId: string) => {
       setSyncing(true);
       await storageService.admitParticipant(meetingId, userId);
-      // Broadcast to everyone to refresh their lists
+      // We still send the broadcast as a backup, even though postgres_changes handles it
       await storageService.sendSignal(channelRef.current, { type: 'refresh-list' });
       setSyncing(false);
   };

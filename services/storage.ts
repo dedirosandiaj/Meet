@@ -145,7 +145,7 @@ export const storageService = {
     return (data || []) as Participant[];
   },
 
-  // Simplified and more robust subscription logic
+  // Optimized Subscription Logic
   subscribeToMeeting: (
     meetingId: string,
     user: User,
@@ -153,30 +153,53 @@ export const storageService = {
     onSignal: (payload: any) => void
   ): RealtimeChannel => {
     
-    const channel = supabase.channel(`meeting_room_${meetingId}`, {
-      config: { 
-        presence: { key: user.id },
-        broadcast: { self: false } // Other clients should receive my signals
-      }
-    });
-
+    // Define refresh logic
     const refreshList = () => {
       storageService.getParticipants(meetingId).then(onParticipantsUpdate);
     };
 
+    const channel = supabase.channel(`meeting_room_${meetingId}`, {
+      config: { 
+        presence: { key: user.id },
+        broadcast: { self: false }
+      }
+    });
+
     channel
-      .on('presence', { event: 'sync' }, refreshList) // Handles joins and leaves
-      .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload)) // For WebRTC
-      .on('broadcast', { event: 'refresh-list' }, refreshList) // For explicit actions like 'admit'
+      // 1. Listen for DB Changes (The most robust way)
+      // This requires Replication to be enabled on the 'participants' table in Supabase.
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'participants', 
+        filter: `meeting_id=eq.${meetingId}` 
+      }, () => {
+        refreshList();
+      })
+      // 2. Listen for Broadcasts (For forced refreshes and signaling)
+      .on('broadcast', { event: 'signal' }, (payload) => onSignal(payload.payload))
+      .on('broadcast', { event: 'refresh-list' }, refreshList)
+      // 3. Listen for Presence (Backup & Online Status)
+      .on('presence', { event: 'sync' }, refreshList)
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
-          // Announce presence
+          // Track presence
           await channel.track({
             user_id: user.id,
             name: user.name,
+            role: user.role
           });
-          // Perform initial fetch
+          
+          // Initial Fetch
           refreshList();
+
+          // FORCE BROADCAST: "I have joined, everyone please refresh your lists"
+          // This covers the race condition where DB insert happens after others checked presence.
+          await channel.send({ 
+            type: 'broadcast', 
+            event: 'refresh-list',
+            payload: {} 
+          });
         }
       });
 
@@ -185,7 +208,6 @@ export const storageService = {
 
   sendSignal: async (channel: RealtimeChannel | null, signal: any) => {
     if (channel) {
-      // The event name is now dynamic based on signal type
       const eventName = signal.type === 'signal' || signal.type === 'chat' ? signal.type : 'refresh-list';
       await channel.send({ type: 'broadcast', event: eventName, payload: signal });
     }

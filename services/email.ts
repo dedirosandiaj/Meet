@@ -126,7 +126,8 @@ ${appSettings.title} Team`;
     const joinUrl = `${baseUrl}/join/${meeting.id}`;
     
     // PLAIN TEXT TEMPLATE FOR MEETING
-    const body = `Meeting Invitation
+    const body = `
+Meeting Invitation
 
 Hi ${name},
 
